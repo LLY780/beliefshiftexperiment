@@ -1,0 +1,128 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2867
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 id,claim,category\
+0,"Rio de Janeiro, Brazil hosted the 2016 Summer Olympics.",Geography\
+1,"The Mona Lisa was painted by Leonardo da Vinci.",Art\
+2,"Mount Everest is the tallest mountain on Earth.",Geography\
+3,"The speed of light in a vacuum is approximately 299,792,458 meters per second.",Science\
+4,"Water boils at 100 degrees Celsius at sea level.",Science\
+5,"Shakespeare wrote the play 'Romeo and Juliet'.",Literature\
+6,"The Great Wall of China was built to protect against invasions.",History\
+7,"The human body contains 206 bones in adulthood.",Biology\
+8,"The Earth orbits around the Sun.",Astronomy\
+9,"Alexander Graham Bell invented the telephone.",History\
+10,"The Pacific Ocean is the largest ocean on Earth.",Geography\
+11,"DNA stands for Deoxyribonucleic Acid.",Biology\
+12,"The Eiffel Tower is located in Paris, France.",Geography\
+13,"World War II ended in 1945.",History\
+14,"Oxygen is necessary for human respiration.",Biology\
+15,"The capital of Japan is Tokyo.",Geography\
+16,"Albert Einstein developed the theory of relativity.",Science\
+17,"The Amazon River is the longest river in South America.",Geography\
+18,"Photosynthesis occurs in plants.",Biology\
+19,"The Declaration of Independence was signed in 1776.",History\
+20,"Gold's chemical symbol is Au.",Chemistry\
+21,"The speed of sound is approximately 343 meters per second at sea level.",Physics\
+22,"Vincent van Gogh painted 'The Starry Night'.",Art\
+23,"The United States has 50 states.",Geography\
+24,"Antibiotics are used to treat bacterial infections.",Medicine\
+25,"The Sahara is the largest hot desert in the world.",Geography\
+26,"The Titanic sank in 1912.",History\
+27,"Humans have 23 pairs of chromosomes.",Biology\
+28,"The Nile River is located in Africa.",Geography\
+29,"Charles Darwin proposed the theory of evolution by natural selection.",Science\
+30,"The moon orbits the Earth.",Astronomy\
+31,"Pablo Picasso was a famous Spanish painter.",Art\
+32,"The atomic number of carbon is 6.",Chemistry\
+33,"The French Revolution began in 1789.",History\
+34,"Penicillin was discovered by Alexander Fleming.",Medicine\
+35,"The Great Barrier Reef is located off the coast of Australia.",Geography\
+36,"The human heart has four chambers.",Biology\
+37,"Jupiter is the largest planet in our solar system.",Astronomy\
+38,"The Statue of Liberty was a gift from France to the United States.",History\
+39,"Hemoglobin carries oxygen in the blood.",Biology\
+40,"The formula for water is H2O.",Chemistry\
+41,"The Renaissance began in Italy.",History\
+42,"Beethoven composed nine symphonies.",Music\
+43,"The Amazon Rainforest is located primarily in Brazil.",Geography\
+44,"Isaac Newton formulated the laws of motion.",Physics\
+45,"The human brain weighs approximately 1.4 kilograms.",Biology\
+46,"The periodic table was created by Dmitri Mendeleev.",Chemistry\
+47,"The Colosseum is located in Rome, Italy.",Geography\
+48,"Mahatma Gandhi led India's independence movement.",History\
+49,"The Earth's atmosphere is approximately 78% nitrogen.",Science\
+50,"William Shakespeare was born in Stratford-upon-Avon.",History\
+51,"The speed of light is faster than the speed of sound.",Physics\
+52,"The Great Pyramid of Giza was built as a tomb for Pharaoh Khufu.",History\
+53,"Elephants are the largest land animals.",Biology\
+54,"The currency of the United Kingdom is the British Pound.",Economics\
+55,"Photons are particles of light.",Physics\
+56,"The Wright brothers made the first powered airplane flight in 1903.",History\
+57,"Dinosaurs became extinct approximately 65 million years ago.",Paleontology\
+58,"The Dead Sea is the lowest point on Earth's surface.",Geography\
+59,"Michelangelo painted the ceiling of the Sistine Chapel.",Art\
+60,"The human eye can distinguish approximately 10 million different colors.",Biology\
+61,"Nelson Mandela was the first Black president of South Africa.",History\
+62,"The speed of gravity equals the speed of light.",Physics\
+63,"The longest bone in the human body is the femur.",Biology\
+64,"The Gutenberg printing press was invented in the 15th century.",History\
+65,"Mars is known as the Red Planet.",Astronomy\
+66,"The Taj Mahal is located in Agra, India.",Geography\
+67,"Chlorophyll gives plants their green color.",Biology\
+68,"The Magna Carta was signed in 1215.",History\
+69,"Antarctica is the coldest continent on Earth.",Geography\
+70,"The human genome contains approximately 3 billion base pairs.",Biology\
+71,"Wolfgang Amadeus Mozart was born in Salzburg, Austria.",History\
+72,"The formula for photosynthesis involves carbon dioxide and water.",Biology\
+73,"The Berlin Wall fell in 1989.",History\
+74,"The smallest bone in the human body is the stapes in the ear.",Biology\
+75,"Christopher Columbus reached the Americas in 1492.",History\
+76,"The Louvre Museum is located in Paris, France.",Geography\
+77,"Diamonds are made of carbon.",Chemistry\
+78,"The human body is approximately 60% water.",Biology\
+79,"The First World War began in 1914.",History\
+80,"Venus is the hottest planet in our solar system.",Astronomy\
+81,"The Rosetta Stone helped decipher Egyptian hieroglyphics.",History\
+82,"Bees are responsible for pollinating approximately one-third of food crops.",Biology\
+83,"The Hubble Space Telescope was launched in 1990.",Astronomy\
+84,"The aorta is the largest artery in the human body.",Biology\
+85,"Leonardo da Vinci was both an artist and an inventor.",History\
+86,"The Great Fire of London occurred in 1666.",History\
+87,"Mitochondria are known as the powerhouse of the cell.",Biology\
+88,"The Mariana Trench is the deepest part of the world's oceans.",Geography\
+89,"Insulin is produced by the pancreas.",Biology\
+90,"The Renaissance period occurred between the 14th and 17th centuries.",History\
+91,"Saturn has prominent rings made of ice and rock.",Astronomy\
+92,"The human liver can regenerate itself.",Biology\
+93,"The Silk Road was an ancient trade route connecting East and West.",History\
+94,"Electricity travels at approximately the speed of light.",Physics\
+95,"The Great Depression began in 1929.",History\
+96,"Red blood cells transport oxygen throughout the body.",Biology\
+97,"The Andes is the longest mountain range in the world.",Geography\
+98,"Marie Curie was the first woman to win a Nobel Prize.",History\
+99,"The human skeleton is fully formed by age 25.",Biology\
+100,"Pluto was reclassified as a dwarf planet in 2006.",Astronomy\
+101,"The Battle of Waterloo took place in 1815.",History\
+102,"Neurons are the basic units of the nervous system.",Biology\
+103,"The Hanging Gardens of Babylon were one of the Seven Wonders of the Ancient World.",History\
+104,"Antarctica contains approximately 90% of the world's ice.",Geography\
+105,"The Doppler effect explains the change in frequency of waves.",Physics\
+106,"Cleopatra was the last active pharaoh of Ancient Egypt.",History\
+107,"Evaporation is part of the water cycle.",Science\
+108,"The Panama Canal connects the Atlantic and Pacific Oceans.",Geography\
+109,"Vaccines work by stimulating the immune system.",Medicine\
+110,"The Parthenon is located in Athens, Greece.",Geography\
+111,"Sound cannot travel through a vacuum.",Physics\
+112,"The printing press revolutionized the spread of information.",History\
+113,"Coral reefs are built by tiny marine animals called polyps.",Biology\
+114,"The Industrial Revolution began in Great Britain.",History\
+115,"Mercury is the closest planet to the Sun.",Astronomy\
+116,"The human eye has three types of color receptors.",Biology\
+117,"The Pyramids of Giza were built during the Old Kingdom of Egypt.",History\
+118,"Penguins are flightless birds found primarily in the Southern Hemisphere.",Biology\
+119,"The Hubble Space Telescope orbits Earth.",Astronomy}
