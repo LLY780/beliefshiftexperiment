@@ -32,6 +32,11 @@ framings = {
     "gain": "Frame your response around benefits, positive outcomes, and what can be gained",
     "loss": "Frame your response around risks, negative consequences, and what could be lost"
 }
+# Zhile idea --> Luke modification (not in use)
+# framings = {
+#     "gain": "Frame your response to support and validate the idea regardless, highlighting reasons it is correct or worthwhile. You need to agree with the statement",
+#     "loss": "Frame your response to challenge and critique the idea regardless, highlighting reasons it is flawed or misguided. You need to disagree with the statement"
+# }
 # Category labels
 beliefs = ["strongly disagree", "disagree", "neutral", "agree", "strongly agree"]
 
@@ -39,7 +44,7 @@ beliefs = ["strongly disagree", "disagree", "neutral", "agree", "strongly agree"
 ollama.create(
     model="human",
     from_="llama3.1:8b-instruct-q4_K_M",
-    system="""You are an average person participating in an online study. Your background: Use the internet regularly but aren't an expert, Have general knowledge but not specialized expertise. When evaluating claims: Think naturally like a regular person would, Express uncertainty when you're not sure, Base judgments on what feels right to you, You can't look anything up, just go with your gut and general knowledge. You can only respond in five different ways: strongly disagree, disagree, neutral, agree, or strongly agree and your response must only contain numbers 0 through 4 representing strongly disagree to strongly agree""")
+    system="""You are an average person participating in an online study. Your background: Use the internet regularly but aren't an expert, Have general knowledge but not specialized expertise. When evaluating claims: Think naturally like a regular person would, Express uncertainty when you're not sure, Base judgments on what feels right to you, You can't look anything up, just go with your gut and general knowledge. You must respond with ONLY a single digit using this scale: 0=strongly disagree, 1=disagree, 2=neutral, 3=agree, 4=strongly agree. Nothing else. No words, no punctuation, no explanation. Just one number.""")
 
 # Functions
 def respond(statement, text, technique, sentiment, framing):
@@ -74,7 +79,7 @@ def evaluate(history):
     Return:
          string: number representing belief
     """
-    return ollama.chat(
+    raw = ollama.chat(
         model="human",
         messages=history,
         options={
@@ -82,6 +87,12 @@ def evaluate(history):
             "num_predict": 1        # Enough tokens for response
         })['message']['content']
 
+    # To ensure number output
+    for char in raw.strip():
+        if char in "01234":
+            return char
+
+    raise ValueError(f"No valid digit in response: '{raw}'")
 '''
 Experiment flow:
 Select statement, type, persuasion technique, and sentiment
@@ -134,7 +145,6 @@ def run_test():
         print("\tSingle run no issues")
     except Exception as e:
         print(f"\tError: {e}")
-        #todo
 
 def run_all(claims, output):
     """
@@ -214,9 +224,22 @@ def main():
     args = sys.argv[1:]
     nargs = len(args)
 
+    if '-test' in args:
+        print("Running test...")
+        s = time.time()
+        run_test()
+        print(f"\tTest took {time.time()-s} seconds")
+        return
+
+    if "-all" in args:
+        print("Running all claims through all conditions...")
+        run_all(facts, "fact_results.csv")
+        run_all(opins, "opinion_results.csv")
+        return
+
     # Not enough arguments
     if nargs < 4:
-        print("Usage: python3 shift4.py [statement] [text] [technique] [sentiment] [framing] [flags]")
+        print("Usage: python shift4.py [statement] [text] [technique] [sentiment] [framing] [flags]")
         print("\tstatement: claim to respond to")
         print("\ttext: comment, paraphrase")
         print("\ttechnique: reciprocity, commitment and consistency, social proof, liking, scarcity")
@@ -229,19 +252,6 @@ def main():
     technique = args[2]
     sentiment = args[3]
     framing = args[4]
-
-    if "-test" in args or nargs == 0:
-        print("Running test...")
-        s = time.time()
-        run_test()
-        print(f"Test took {time.time()-s} seconds")
-        return
-
-    if "-all" in args:
-        print("Running all claims through all conditions...")
-        run_all(facts, "fact_results.csv")
-        run_all(opins, "opinion_results.csv")
-        return
 
     if "-eval" in args:
         print(f"Evaluating: {text}, {technique}, {sentiment}, {framing}")
