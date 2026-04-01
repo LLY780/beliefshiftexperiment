@@ -1,4 +1,4 @@
-id,statement,category
+id,claim,category
 0,"Social media does more harm than good for society.",Technology
 1,"Remote work is better than working in an office.",Work
 2,"College education should be free for all students.",Education
@@ -118,4 +118,4 @@ id,statement,category
 116,"Professional dress codes are unnecessary in most workplaces.",Work
 117,"Competitive sports for young children do more harm than good.",Sports
 118,"Libraries are becoming obsolete in the digital age.",Culture
-119,"The concept of work-life balance is a myth.",Work}
+119,"The concept of work-life balance is a myth.",Work
