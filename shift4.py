@@ -28,9 +28,14 @@ sentiments = {
     "neutral" : "Use balanced, objective, and emotionally unbiased language with a factual and impartial tone and no clear stance"
 }
 # Zhile idea
+# framings = {
+#     "gain": "Frame your response around benefits, positive outcomes, and what can be gained",
+#     "loss": "Frame your response around risks, negative consequences, and what could be lost"
+# }
+# Zhile idea --> Luke modification
 framings = {
-    "gain": "Frame your response around benefits, positive outcomes, and what can be gained",
-    "loss": "Frame your response around risks, negative consequences, and what could be lost"
+    "gain": "Frame your response to support and validate the idea regardless, highlighting reasons it is correct or worthwhile. You need to agree with the statement",
+    "loss": "Frame your response to challenge and critique the idea regardless, highlighting reasons it is flawed or misguided. You need to disagree with the statement"
 }
 # Category labels
 beliefs = ["strongly disagree", "disagree", "neutral", "agree", "strongly agree"]
@@ -214,9 +219,16 @@ def main():
     args = sys.argv[1:]
     nargs = len(args)
 
+    if '-test' in args or nargs == 1:
+        print("Running test...")
+        s = time.time()
+        run_test()
+        print(f"\tTest took {time.time()-s} seconds")
+        return
+
     # Not enough arguments
     if nargs < 4:
-        print("Usage: python3 shift4.py [statement] [text] [technique] [sentiment] [framing] [flags]")
+        print("Usage: python shift4.py [statement] [text] [technique] [sentiment] [framing] [flags]")
         print("\tstatement: claim to respond to")
         print("\ttext: comment, paraphrase")
         print("\ttechnique: reciprocity, commitment and consistency, social proof, liking, scarcity")
@@ -229,13 +241,6 @@ def main():
     technique = args[2]
     sentiment = args[3]
     framing = args[4]
-
-    if "-test" in args or nargs == 0:
-        print("Running test...")
-        s = time.time()
-        run_test()
-        print(f"Test took {time.time()-s} seconds")
-        return
 
     if "-all" in args:
         print("Running all claims through all conditions...")
