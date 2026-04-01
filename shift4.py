@@ -79,20 +79,22 @@ def evaluate(history):
     Return:
          string: number representing belief
     """
-    raw = ollama.chat(
-        model="human",
-        messages=history,
-        options={
-            "temperature": 0.75,    # Higher = more human-like variation
-            "num_predict": 1        # Enough tokens for response
-        })['message']['content']
+    for attempt in range(3):
+        raw = ollama.chat(
+            model="human",
+            messages=history,
+            options={
+                "temperature": 0.75,    # Higher = more human-like variation
+                "num_predict": 1        # Enough tokens for response
+            })['message']['content']
 
-    # To ensure number output
-    for char in raw.strip():
-        if char in "01234":
-            return char
+        # To ensure number output
+        for char in raw.strip():
+            if char in "01234":
+                return char
 
-    raise ValueError(f"No valid digit in response: '{raw}'")
+    print(f"\tWARNING: No valid digit after 3 attempts (last: '{raw}'), defaulting to 2 (neutral)")
+    return '2'
 '''
 Experiment flow:
 Select statement, type, persuasion technique, and sentiment
@@ -241,15 +243,18 @@ def centaur_respond(claim, text_type, framing, refutation):
 
 def centaur_evaluate(history):
     """Get belief rating from Centaur model (temperature=0 for determinism)."""
-    raw = ollama.chat(
-        model="centaur",
-        messages=history,
-        options={"temperature": 0, "num_predict": 1}
-    )['message']['content']
-    for char in raw.strip():
-        if char in "01234":
-            return int(char)
-    raise ValueError(f"No valid digit in response: '{raw}'")
+    for attempt in range(3):
+        raw = ollama.chat(
+            model="centaur",
+            messages=history,
+            options={"temperature": 0, "num_predict": 1}
+        )['message']['content']
+        for char in raw.strip():
+            if char in "01234":
+                return int(char)
+
+    print(f"\tWARNING: No valid digit after 3 attempts (last: '{raw}'), defaulting to 2 (neutral)")
+    return 2
 
 
 def centaur_run_trial(claim, text_type, framing, refutation):
