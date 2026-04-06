@@ -15,5 +15,8 @@ The current experiment design is as follows: assign a neutral stance to the huma
 
 The following models are used: Llama 3.1, Mistral, Deepseek
 
+### Installing the Models
+Depending on OS, run model.sh or model.bat to install the models
+
 ### Running the Experiment
 To be implemented
