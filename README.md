@@ -3,8 +3,10 @@ An experiment for observing how AI generated responses affect beliefs/opinions
 
 Created by: Luke Ly, Zhile Dai
 
+Supervised by: Professor Reza Zafarani and PhD student Zhaoyang Cao
+
 ## Preliminary Findings
-For explanation of experiment and preliminary paper [see here](https://docs.google.com/document/d/1MZ6qYJ69MfmodQM4kqRPXfrrHshBQevImPQWvZktw6o/edit?usp=sharing)
+For explanation of inital experiment and preliminary paper [see here](https://docs.google.com/document/d/1MZ6qYJ69MfmodQM4kqRPXfrrHshBQevImPQWvZktw6o/edit?usp=sharing)
 
 preliminaryexperiment.py contains the inital experimental designed for the paper above, with results generated from this file.
 To run the experiment, use runExperiment function and do with what you will with the output
