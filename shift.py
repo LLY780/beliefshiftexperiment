@@ -110,19 +110,27 @@ For each experiment run, the human agent only has context within their respectiv
 
 # Consider removing this and transferring the running to evaluate
 
-def run_test():
+def run_test(prnt):
     """
     Tests all essential functions by a single run of run_single to ensure readiness and working status of respond, evaluate, and run_single using one claim and set combo of metrics
     Created by Luke
+
+    Param:
+        prnt (boolean): to print output
+    Return:
+        float: time it takes to run a single eval
     """
+    s = time.time()
     try:
         response = respond(claims[0], "comment", "reciprocity", "positive", "positive")
         shift = int(evaluate(claims[0], response))
-        print("\tTest response:")
-        print(f"\t\t{response}")
-        print(f"\t\t{beliefs[shift]}")
+        if (prnt):
+            print("\tTest response:")
+            print(f"\t\t{response}")
+            print(f"\t\t{beliefs[shift]}")
     except Exception as e:
         print(f"\tError: {e}")
+    return time.time()-s
 
 def run_eval(statement, text, technique, sentiment, lean):
     """
@@ -261,8 +269,8 @@ def main():
         system="""You are an average person participating in an online study. Your background: Use the internet regularly but aren't an expert. You have general knowledge but not specialized expertise. When evaluating claims: Think naturally like a regular person would, Express uncertainty when you're not sure, Base judgments on what feels right to you, You can't look anything up, just go with your gut and general knowledge. You must respond with ONLY a single digit using this scale: 0=strongly disagree, 1=disagree, 2=neutral, 3=agree, 4=strongly agree""")
 
     if "--sample" in args:
-        facts = df[df["type"] == "fact"].sample(50, random_state=42)
-        opinions = df[df["type"] == "opinion"].sample(50, random_state=42)
+        facts = df[df["type"] == "fact"].sample(36, random_state=42)
+        opinions = df[df["type"] == "opinion"].sample(36, random_state=42)
         sampled = pd.concat([facts, opinions], ignore_index=True)
         print(f"Sampled {len(sampled)} claims")
         global claims
@@ -276,15 +284,16 @@ def main():
 
     if '--test' in args:
         print("Running test...")
-        s = time.time()
-        run_test()
-        print(f"\tTest took {time.time()-s} seconds")
+        runtime = run_test(True)
+        print(f"\tTest took {runtime} seconds")
         return
 
     if "--all" in args:
         print("Running all claims through all conditions...")
         # run_all(facts, "fact_results.csv")
         # run_all(opins, "opinion_results.csv")
+        runtime = run_test(False)
+        print(f"Estimated time: {(int(runtime)*len(claims)*len(texts)*len(techniques)*len(sentiments)*len(leans)*n)/60/60} hours")
         run_all(claims)
         return
 
