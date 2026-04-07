@@ -1,0 +1,241 @@
+id,claim,category,type
+0,"Rio de Janeiro, Brazil hosted the 2016 Summer Olympics.",Geography,fact
+1,The Mona Lisa was painted by Leonardo da Vinci.,Art,fact
+2,Mount Everest is the tallest mountain on Earth.,Geography,fact
+3,"The speed of light in a vacuum is approximately 299,792,458 meters per second.",Science,fact
+4,Water boils at 100 degrees Celsius at sea level.,Science,fact
+5,Shakespeare wrote the play 'Romeo and Juliet'.,Literature,fact
+6,The Great Wall of China was built to protect against invasions.,History,fact
+7,The human body contains 206 bones in adulthood.,Biology,fact
+8,The Earth orbits around the Sun.,Astronomy,fact
+9,Alexander Graham Bell invented the telephone.,History,fact
+10,The Pacific Ocean is the largest ocean on Earth.,Geography,fact
+11,DNA stands for Deoxyribonucleic Acid.,Biology,fact
+12,"The Eiffel Tower is located in Paris, France.",Geography,fact
+13,World War II ended in 1945.,History,fact
+14,Oxygen is necessary for human respiration.,Biology,fact
+15,The capital of Japan is Tokyo.,Geography,fact
+16,Albert Einstein developed the theory of relativity.,Science,fact
+17,The Amazon River is the longest river in South America.,Geography,fact
+18,Photosynthesis occurs in plants.,Biology,fact
+19,The Declaration of Independence was signed in 1776.,History,fact
+20,Gold's chemical symbol is Au.,Chemistry,fact
+21,The speed of sound is approximately 343 meters per second at sea level.,Physics,fact
+22,Vincent van Gogh painted 'The Starry Night'.,Art,fact
+23,The United States has 50 states.,Geography,fact
+24,Antibiotics are used to treat bacterial infections.,Medicine,fact
+25,The Sahara is the largest hot desert in the world.,Geography,fact
+26,The Titanic sank in 1912.,History,fact
+27,Humans have 23 pairs of chromosomes.,Biology,fact
+28,The Nile River is located in Africa.,Geography,fact
+29,Charles Darwin proposed the theory of evolution by natural selection.,Science,fact
+30,The moon orbits the Earth.,Astronomy,fact
+31,Pablo Picasso was a famous Spanish painter.,Art,fact
+32,The atomic number of carbon is 6.,Chemistry,fact
+33,The French Revolution began in 1789.,History,fact
+34,Penicillin was discovered by Alexander Fleming.,Medicine,fact
+35,The Great Barrier Reef is located off the coast of Australia.,Geography,fact
+36,The human heart has four chambers.,Biology,fact
+37,Jupiter is the largest planet in our solar system.,Astronomy,fact
+38,The Statue of Liberty was a gift from France to the United States.,History,fact
+39,Hemoglobin carries oxygen in the blood.,Biology,fact
+40,The formula for water is H2O.,Chemistry,fact
+41,The Renaissance began in Italy.,History,fact
+42,Beethoven composed nine symphonies.,Music,fact
+43,The Amazon Rainforest is located primarily in Brazil.,Geography,fact
+44,Isaac Newton formulated the laws of motion.,Physics,fact
+45,The human brain weighs approximately 1.4 kilograms.,Biology,fact
+46,The periodic table was created by Dmitri Mendeleev.,Chemistry,fact
+47,"The Colosseum is located in Rome, Italy.",Geography,fact
+48,Mahatma Gandhi led India's independence movement.,History,fact
+49,The Earth's atmosphere is approximately 78% nitrogen.,Science,fact
+50,William Shakespeare was born in Stratford-upon-Avon.,History,fact
+51,The speed of light is faster than the speed of sound.,Physics,fact
+52,The Great Pyramid of Giza was built as a tomb for Pharaoh Khufu.,History,fact
+53,Elephants are the largest land animals.,Biology,fact
+54,The currency of the United Kingdom is the British Pound.,Economics,fact
+55,Photons are particles of light.,Physics,fact
+56,The Wright brothers made the first powered airplane flight in 1903.,History,fact
+57,Dinosaurs became extinct approximately 65 million years ago.,Paleontology,fact
+58,The Dead Sea is the lowest point on Earth's surface.,Geography,fact
+59,Michelangelo painted the ceiling of the Sistine Chapel.,Art,fact
+60,The human eye can distinguish approximately 10 million different colors.,Biology,fact
+61,Nelson Mandela was the first Black president of South Africa.,History,fact
+62,The speed of gravity equals the speed of light.,Physics,fact
+63,The longest bone in the human body is the femur.,Biology,fact
+64,The Gutenberg printing press was invented in the 15th century.,History,fact
+65,Mars is known as the Red Planet.,Astronomy,fact
+66,"The Taj Mahal is located in Agra, India.",Geography,fact
+67,Chlorophyll gives plants their green color.,Biology,fact
+68,The Magna Carta was signed in 1215.,History,fact
+69,Antarctica is the coldest continent on Earth.,Geography,fact
+70,The human genome contains approximately 3 billion base pairs.,Biology,fact
+71,"Wolfgang Amadeus Mozart was born in Salzburg, Austria.",History,fact
+72,The formula for photosynthesis involves carbon dioxide and water.,Biology,fact
+73,The Berlin Wall fell in 1989.,History,fact
+74,The smallest bone in the human body is the stapes in the ear.,Biology,fact
+75,Christopher Columbus reached the Americas in 1492.,History,fact
+76,"The Louvre Museum is located in Paris, France.",Geography,fact
+77,Diamonds are made of carbon.,Chemistry,fact
+78,The human body is approximately 60% water.,Biology,fact
+79,The First World War began in 1914.,History,fact
+80,Venus is the hottest planet in our solar system.,Astronomy,fact
+81,The Rosetta Stone helped decipher Egyptian hieroglyphics.,History,fact
+82,Bees are responsible for pollinating approximately one-third of food crops.,Biology,fact
+83,The Hubble Space Telescope was launched in 1990.,Astronomy,fact
+84,The aorta is the largest artery in the human body.,Biology,fact
+85,Leonardo da Vinci was both an artist and an inventor.,History,fact
+86,The Great Fire of London occurred in 1666.,History,fact
+87,Mitochondria are known as the powerhouse of the cell.,Biology,fact
+88,The Mariana Trench is the deepest part of the world's oceans.,Geography,fact
+89,Insulin is produced by the pancreas.,Biology,fact
+90,The Renaissance period occurred between the 14th and 17th centuries.,History,fact
+91,Saturn has prominent rings made of ice and rock.,Astronomy,fact
+92,The human liver can regenerate itself.,Biology,fact
+93,The Silk Road was an ancient trade route connecting East and West.,History,fact
+94,Electricity travels at approximately the speed of light.,Physics,fact
+95,The Great Depression began in 1929.,History,fact
+96,Red blood cells transport oxygen throughout the body.,Biology,fact
+97,The Andes is the longest mountain range in the world.,Geography,fact
+98,Marie Curie was the first woman to win a Nobel Prize.,History,fact
+99,The human skeleton is fully formed by age 25.,Biology,fact
+100,Pluto was reclassified as a dwarf planet in 2006.,Astronomy,fact
+101,The Battle of Waterloo took place in 1815.,History,fact
+102,Neurons are the basic units of the nervous system.,Biology,fact
+103,The Hanging Gardens of Babylon were one of the Seven Wonders of the Ancient World.,History,fact
+104,Antarctica contains approximately 90% of the world's ice.,Geography,fact
+105,The Doppler effect explains the change in frequency of waves.,Physics,fact
+106,Cleopatra was the last active pharaoh of Ancient Egypt.,History,fact
+107,Evaporation is part of the water cycle.,Science,fact
+108,The Panama Canal connects the Atlantic and Pacific Oceans.,Geography,fact
+109,Vaccines work by stimulating the immune system.,Medicine,fact
+110,"The Parthenon is located in Athens, Greece.",Geography,fact
+111,Sound cannot travel through a vacuum.,Physics,fact
+112,The printing press revolutionized the spread of information.,History,fact
+113,Coral reefs are built by tiny marine animals called polyps.,Biology,fact
+114,The Industrial Revolution began in Great Britain.,History,fact
+115,Mercury is the closest planet to the Sun.,Astronomy,fact
+116,The human eye has three types of color receptors.,Biology,fact
+117,The Pyramids of Giza were built during the Old Kingdom of Egypt.,History,fact
+118,Penguins are flightless birds found primarily in the Southern Hemisphere.,Biology,fact
+119,The Hubble Space Telescope orbits Earth.,Astronomy,fact
+120,Social media does more harm than good for society.,Technology,opinion
+121,Remote work is better than working in an office.,Work,opinion
+122,College education should be free for all students.,Education,opinion
+123,Artificial intelligence will create more jobs than it eliminates.,Technology,opinion
+124,Eating meat is morally wrong.,Ethics,opinion
+125,The death penalty should be abolished worldwide.,Justice,opinion
+126,Parents should not be allowed to share photos of their children on social media.,Privacy,opinion
+127,Professional athletes are overpaid for what they do.,Sports,opinion
+128,Learning a second language should be mandatory in schools.,Education,opinion
+129,Self-driving cars will make roads safer overall.,Technology,opinion
+130,Zoos do more harm than good for animal welfare.,Ethics,opinion
+131,A four-day work week should be the standard.,Work,opinion
+132,Violent video games contribute to real-world violence.,Media,opinion
+133,Universal basic income is a good solution to technological unemployment.,Economics,opinion
+134,Space exploration is more important than solving Earth's problems.,Science,opinion
+135,Homework does more harm than good for students.,Education,opinion
+136,Online friendships are as valuable as in-person friendships.,Social,opinion
+137,Standardized testing is an ineffective measure of student ability.,Education,opinion
+138,Nuclear energy is necessary to combat climate change.,Environment,opinion
+139,Tipping culture should be eliminated in favor of higher base wages.,Economics,opinion
+140,Reality TV has a negative impact on society.,Media,opinion
+141,Genetic engineering of humans should be allowed.,Ethics,opinion
+142,Reading fiction is more valuable than reading nonfiction.,Culture,opinion
+143,Democracy is the best form of government.,Politics,opinion
+144,Art and music classes are as important as math and science.,Education,opinion
+145,Cryptocurrency will eventually replace traditional currency.,Economics,opinion
+146,Assisted suicide should be legal for terminally ill patients.,Ethics,opinion
+147,Minimum wage should be high enough to support a comfortable living.,Economics,opinion
+148,Children should not be exposed to religion until they can choose for themselves.,Philosophy,opinion
+149,Privacy is more important than national security.,Politics,opinion
+150,Cancel culture does more harm than good.,Social,opinion
+151,The electoral college should be abolished in the United States.,Politics,opinion
+152,Zoos and aquariums should be banned.,Ethics,opinion
+153,School uniforms improve the learning environment.,Education,opinion
+154,Plastic should be banned entirely.,Environment,opinion
+155,The traditional 9-5 work schedule is outdated.,Work,opinion
+156,Public transportation should be free for everyone.,Economics,opinion
+157,Screen time limits are necessary for children.,Parenting,opinion
+158,Billionaires should not exist in an ethical society.,Economics,opinion
+159,Animals should have the same legal rights as humans.,Ethics,opinion
+160,All drugs should be decriminalized.,Policy,opinion
+161,Homeschooling is better than traditional schooling.,Education,opinion
+162,Climate change is the most pressing issue facing humanity.,Environment,opinion
+163,Prison should focus on rehabilitation rather than punishment.,Justice,opinion
+164,Beauty pageants are harmful and should be banned.,Social,opinion
+165,Marriage as an institution is outdated.,Social,opinion
+166,Streaming services are killing traditional cinema.,Entertainment,opinion
+167,Censorship is sometimes necessary to protect society.,Politics,opinion
+168,Professional sports leagues should ban performance-enhancing drugs entirely.,Sports,opinion
+169,Fast fashion is unethical and should be avoided.,Ethics,opinion
+170,Voting should be mandatory for all eligible citizens.,Politics,opinion
+171,Organic food is worth the extra cost.,Health,opinion
+172,Children should be allowed to decide their own bedtimes.,Parenting,opinion
+173,Genetically modified foods are safe and beneficial.,Science,opinion
+174,The internet has made people lonelier overall.,Social,opinion
+175,Traditional gender roles are outdated and harmful.,Social,opinion
+176,Grading systems in schools should be abolished.,Education,opinion
+177,Automation will lead to a worse quality of life for most people.,Technology,opinion
+178,Advertising to children should be illegal.,Ethics,opinion
+179,Professional musicians should not lip-sync at concerts.,Entertainment,opinion
+180,Governments should regulate social media platforms more strictly.,Policy,opinion
+181,Having children is morally irresponsible given climate change.,Ethics,opinion
+182,The traditional five-day school week should be shortened.,Education,opinion
+183,Cosmetic surgery for purely aesthetic reasons is unethical.,Ethics,opinion
+184,"All animals should be kept as pets, not just domesticated ones.",Ethics,opinion
+185,Books are better than movies for storytelling.,Culture,opinion
+186,The voting age should be lowered to 16.,Politics,opinion
+187,Single-use plastics should be banned globally.,Environment,opinion
+188,The gig economy exploits workers.,Economics,opinion
+189,Spanking children is never acceptable.,Parenting,opinion
+190,Video games should be considered a legitimate sport.,Sports,opinion
+191,Wealth inheritance perpetuates inequality and should be heavily taxed.,Economics,opinion
+192,Traditional lectures are an ineffective teaching method.,Education,opinion
+193,Humans have a moral obligation to be vegetarian or vegan.,Ethics,opinion
+194,Social media platforms should verify all user identities.,Technology,opinion
+195,The traditional concept of retirement at 65 is outdated.,Work,opinion
+196,Graffiti is a legitimate form of art.,Culture,opinion
+197,All healthcare should be provided by the government.,Policy,opinion
+198,Reality shows exploit their participants.,Media,opinion
+199,Children should not be given participation trophies.,Education,opinion
+200,The fashion industry promotes unhealthy body standards.,Social,opinion
+201,Standardized testing should be eliminated from schools.,Education,opinion
+202,Public figures have no right to privacy.,Media,opinion
+203,Superhero movies are oversaturating the film industry.,Entertainment,opinion
+204,Everyone should learn to code.,Education,opinion
+205,The concept of intellectual property stifles innovation.,Economics,opinion
+206,Parents should not force their children to hug relatives.,Parenting,opinion
+207,Zoos are necessary for species conservation.,Ethics,opinion
+208,Working from home makes people less productive.,Work,opinion
+209,Student loan debt should be forgiven.,Economics,opinion
+210,The traditional album format in music is outdated.,Entertainment,opinion
+211,Social media influencing is not a real job.,Work,opinion
+212,Governments should ban all forms of tobacco.,Policy,opinion
+213,Open-plan offices are worse for productivity than private offices.,Work,opinion
+214,The legal drinking age should be lowered.,Policy,opinion
+215,Piracy of digital media is sometimes justified.,Ethics,opinion
+216,Contact sports like boxing and MMA should be banned.,Sports,opinion
+217,Universities should eliminate Greek life organizations.,Education,opinion
+218,The concept of a 'dream job' is harmful.,Work,opinion
+219,Zoos provide valuable educational experiences.,Education,opinion
+220,Parents should be licensed before having children.,Ethics,opinion
+221,Historical statues should not be removed regardless of who they depict.,History,opinion
+222,The internet should be recognized as a basic human right.,Technology,opinion
+223,Schools should teach personal finance as a mandatory subject.,Education,opinion
+224,Exotic animals should not be kept as pets.,Ethics,opinion
+225,The traditional nine-month school year is inefficient.,Education,opinion
+226,Professional video gaming deserves the same respect as traditional sports.,Sports,opinion
+227,Nepotism in the workplace is always wrong.,Work,opinion
+228,The government should regulate portion sizes at restaurants.,Policy,opinion
+229,Driverless public transportation is the future of cities.,Technology,opinion
+230,Parents should not give their children allowances.,Parenting,opinion
+231,Streaming music services exploit artists.,Economics,opinion
+232,Traditional news media is more trustworthy than social media news.,Media,opinion
+233,School starting times should be later to match teenage sleep patterns.,Education,opinion
+234,Eco-tourism does more harm than good.,Environment,opinion
+235,The right to be forgotten should exist online.,Technology,opinion
+236,Professional dress codes are unnecessary in most workplaces.,Work,opinion
+237,Competitive sports for young children do more harm than good.,Sports,opinion
+238,Libraries are becoming obsolete in the digital age.,Culture,opinion
+239,The concept of work-life balance is a myth.,Work,opinion
