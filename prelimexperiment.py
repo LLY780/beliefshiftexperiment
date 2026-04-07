@@ -4,9 +4,11 @@ import time
 import matplotlib as plt
 
 # Data sets containing fact and opinion statements
-facts = pd.read_csv("fact.csv")["claim"].tolist()     # Compiled and reformated by Claude.ai from FAViQ
-opins = pd.read_csv("opinion.csv")["claim"].tolist()  # Created by Claude.ai
-dtest = opins[0:2]
+# facts = pd.read_csv("fact.csv")["claim"].tolist()     # Compiled and reformated by Claude.ai from FAViQ
+# opins = pd.read_csv("opinion.csv")["claim"].tolist()  # Created by Claude.ai
+claims = pd.read_csv("claims.csv")["claim"].tolist()    # fact.csv and opinion.csv merged
+
+dtest = claims[0:2]
 print(dtest)
 
 # Setup human agent profile
@@ -128,11 +130,11 @@ def testExperiment():
     return shifts
 
 def runExperiment():
-    factShift = runShift(facts)
-    opinShift = runShift(opins)
+    # factShift = runShift(facts)
+    # opinShift = runShift(opins)
 
     # Merge shifts
-    shifts = factShift
+    shift = runShift(claims)
 
 def genStats(shifts):
     # shift conditions: low,low; low,med; low,high; high,low; high,med; high,high
