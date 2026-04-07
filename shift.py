@@ -11,6 +11,7 @@ from pydantic import BaseModel
 # facts = pd.read_csv("fact.csv")["claim"].tolist()     # Compiled and reformated by Claude.ai from FAViQ
 # opins = pd.read_csv("opinion.csv")["claim"].tolist()  # Created by Claude.ai
 claims = pd.read_csv("claims.csv")["claim"].tolist()    # fact.csv and opinion.csv merged
+n =
 
 # Zhaoyang idea
 texts = {
@@ -140,7 +141,7 @@ def run_eval(statement, text, technique, sentiment, lean):
     for i in range(30):
         response = respond(statement, text, technique, sentiment, lean)
         shift = int(evaluate(statement, response))
-        final = beliefs[shift]
+        final = max(0, min(4, int(evaluate(statement, response))))
         shifts.append(shift-2)
         results.append((final, shift-2, response))
     shifts.sort()
