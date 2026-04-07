@@ -11,6 +11,8 @@ from pydantic import BaseModel
 # facts = pd.read_csv("fact.csv")["claim"].tolist()     # Compiled and reformated by Claude.ai from FAViQ
 # opins = pd.read_csv("opinion.csv")["claim"].tolist()  # Created by Claude.ai
 claims = pd.read_csv("claims.csv")["claim"].tolist()    # fact.csv and opinion.csv merged
+global n
+n = 10
 
 # Zhaoyang idea
 texts = {
@@ -137,17 +139,17 @@ def run_eval(statement, text, technique, sentiment, lean):
     """
     results = []
     shifts = []
-    for i in range(30):
+    for i in range(n):
         response = respond(statement, text, technique, sentiment, lean)
-        shift = int(evaluate(statement, response))
+        shift = max(0, min(4, int(evaluate(statement, response))))
         final = beliefs[shift]
-        shifts.append(shift-2)
-        results.append((final, shift-2, response))
+        shifts.append(shift - 2)
+        results.append((final, shift - 2, response))
     shifts.sort()
-    abs_results = [abs(n) for n in shifts]
+    abs_results = [abs(s) for s in shifts]
     # second tuple: (mean, median, abs mean, abs median)
     # regular mean/median shows direction, abs shows magnitude
-    return (results, sum(shifts)/30, shifts[14], sum(abs_results)/30, abs_results[14])
+    return (results, sum(shifts)/n, shifts[n//2], sum(abs_results)/n, abs_results[n//2])
 
 def run_all(claims):
     """
