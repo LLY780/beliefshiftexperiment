@@ -321,7 +321,7 @@ def main():
     text = args[2]      # text (string): comment or paraphrase
     technique = args[3] # technique (string): Cialdini’s principles, linked in README
     sentiment = args[4] # sentiment (string): positive, negative, neutral
-    lean = args[5]
+    lean = args[5]      # lean (string): to be implemented or removed
 
     if "--eval" in args:
         print(f"Evaluating: {text}, {technique}, {sentiment}, {lean}")
