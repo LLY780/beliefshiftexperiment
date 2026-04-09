@@ -37,9 +37,9 @@ sentiments = {
 }
 # Zhile idea --> Luke modification
 leans = {
-    # "positive": "Frame your response to support and validate the idea regardless, highlighting reasons it is correct or worthwhile. You need to agree with the statement",
-    # "negative": "Frame your response to challenge and critique the idea regardless, highlighting reasons it is flawed or misguided. You need to disagree with the statement",
-    "none": "Present the information as it is without any attempt to persuade or influence. Be purely informational and objective"
+    "proattitudinal": "Frame your response to support and validate the statement, presenting agreeable information that aligns with a positive position toward the topic",
+    "counterattitudinal": "Frame your response to challenge and critique the statement, presenting disagreeable information that opposes a positive position toward the topic",
+    "none": "Present the information as it is without any attempt to take a position. Be purely informational and objective"
 }
 # Category labels
 beliefs = ["strongly disagree", "disagree", "neutral", "agree", "strongly agree"]
