@@ -248,11 +248,6 @@ def main():
     """
     Created by Zhile, modified by Luke
 
-    Args:
-        statement (string): claim used for response
-        text (string): comment or paraphrase
-        technique (string): Cialdini’s principles, linked in README
-        sentiment (string): positive, negative, neutral
     Flags:
         --all:
         --eval:
@@ -322,10 +317,10 @@ def main():
         print("\tflags: --test (tests all critical functions), --all (evaluates all claims), --eval (evaluates performance of single combination), --n [n] (amount of runs per evaluation), --sample [seed] (random sample of claims with seed)")
         return
 
-    statement = args[1]
-    text = args[2]
-    technique = args[3]
-    sentiment = args[4]
+    statement = args[1] # statement (string): claim used for response
+    text = args[2]      # text (string): comment or paraphrase
+    technique = args[3] # technique (string): Cialdini’s principles, linked in README
+    sentiment = args[4] # sentiment (string): positive, negative, neutral
     lean = args[5]
 
     if "--eval" in args:
