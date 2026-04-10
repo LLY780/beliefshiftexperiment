@@ -270,19 +270,18 @@ def main():
         from_=model,
         system="""You are an average person participating in an online study. Your background: Use the internet regularly but aren't an expert. You have general knowledge but not specialized expertise. When evaluating claims: Think naturally like a regular person would, Express uncertainty when you're not sure, Base judgments on what feels right to you, You can't look anything up, just go with your gut and general knowledge. You must respond with ONLY a single digit using this scale: 0=strongly disagree, 1=disagree, 2=neutral, 3=agree, 4=strongly agree""")
 
-    # Read claims.csv
-    global claims
-    claims = df[df["type"] == "opinion"]["claim"].tolist()
-
     if "--sample" in args:
         idx = args.index("--sample")
-        seed = int(args[idx+1])
-        size = int(args[idx+2])
+        seed = int(args[idx + 1])
+        size = int(args[idx + 2])
+        global claims
         # facts = df[df["type"] == "fact"].sample(36, random_state=seed)
-        sampled = df[df["type"] == "fact"].sample(size, random_state=seed)
+        sampled = df[df["type"] == "opinion"].sample(size, random_state=seed)
         # sampled = pd.concat([facts, opinions], ignore_index=True)
         print(f"Sampled {len(sampled)} claims")
         claims = sampled["claim"].tolist()
+    else:
+        claims = df[df["type"] == "opinion"]["claim"].tolist()
 
     if "--n" in args:
         idx = args.index("--n")
