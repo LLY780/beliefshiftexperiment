@@ -166,7 +166,7 @@ def main_effects(results_df):
                 print(f"    ANOVA (suppl.): F={av['F']:.2f}, p={av['p']:.2e}, η²={av['eta_sq']:.4f} ({av['effect']})")
 
             if measure == "shift":
-                sig_vars[var] = {"sig": kw["sig"], "p": kw["p"], "eps_sq": kw["eps_sq"]}
+                sig_vars[var] = {"sig": kw["sig"], "p": kw["p"], "eps_sq": kw["eps_sq"], "effect": kw["effect"]}
 
             report.append({
                 "measure": measure, "variable": var,
@@ -272,80 +272,166 @@ def ranking_summary(results_df):
 # VISUALIZATIONS
 # ============================================================
 
+# Abbreviations for technique names (too long for axis labels)
+TECH_SHORT = {
+    "authority": "Authority",
+    "commitment and consistency": "Commitment",
+    "liking": "Liking",
+    "none": "None",
+    "reciprocity": "Reciprocity",
+    "scarcity": "Scarcity",
+    "social proof": "Social Proof",
+}
+
+SHIFT_LABELS = {-2: "Strongly\nDisagree", -1: "Disagree", 0: "No\nChange", 1: "Agree", 2: "Strongly\nAgree"}
+
+
 def plot_main_effects(results_df, sig_vars):
-    """Violin plots with significance annotation per subplot."""
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    fig.suptitle("Belief Shift by Experimental Variable", fontsize=16, fontweight="bold")
+    """Violin plots with clear annotations."""
+    fig, axes = plt.subplots(2, 2, figsize=(14, 11))
+    fig.suptitle("Belief Shift Distribution by Experimental Variable", fontsize=16, fontweight="bold")
 
     for ax, var in zip(axes.flat, VARIABLES):
         order = results_df.groupby(var)["shift"].mean().sort_values(ascending=False).index.tolist()
-        sns.violinplot(data=results_df, x=var, y="shift", order=order,
-                       palette="Set2", inner="quartile", ax=ax, cut=0)
-        # Mean markers
-        means = results_df.groupby(var)["shift"].mean()
-        for i, level in enumerate(order):
-            ax.scatter(i, means[level], color="black", s=30, zorder=5)
 
-        ax.set_ylabel("Shift")
+        # Shorten technique labels
+        if var == "technique":
+            plot_df = results_df.copy()
+            plot_df["technique_short"] = plot_df["technique"].map(TECH_SHORT)
+            order_short = [TECH_SHORT[t] for t in order]
+            sns.violinplot(data=plot_df, x="technique_short", y="shift", order=order_short,
+                           palette="Set2", inner="quartile", ax=ax, cut=0)
+            means = plot_df.groupby("technique_short")["shift"].mean()
+            for i, level in enumerate(order_short):
+                ax.scatter(i, means[level], color="black", s=30, zorder=5)
+        else:
+            sns.violinplot(data=results_df, x=var, y="shift", order=order,
+                           palette="Set2", inner="quartile", ax=ax, cut=0)
+            means = results_df.groupby(var)["shift"].mean()
+            for i, level in enumerate(order):
+                ax.scatter(i, means[level], color="black", s=30, zorder=5)
+                # Add mean value label
+                ax.annotate(f"{means[level]:.2f}", (i, means[level]),
+                           textcoords="offset points", xytext=(15, 0),
+                           fontsize=9, fontweight="bold")
+
+        # Y-axis: belief labels
+        ax.set_yticks([-2, -1, 0, 1, 2])
+        ax.set_yticklabels([SHIFT_LABELS[v] for v in [-2, -1, 0, 1, 2]], fontsize=8)
+        ax.set_ylabel("")
         ax.set_xlabel("")
-        ax.axhline(y=0, color="black", linewidth=0.5, linestyle="--", alpha=0.5)
-        ax.tick_params(axis="x", rotation=20, labelsize=9)
+        ax.axhline(y=0, color="black", linewidth=0.8, linestyle="--", alpha=0.5)
+        ax.tick_params(axis="x", rotation=0, labelsize=9)
 
-        # Significance annotation
+        # Title with significance
         info = sig_vars.get(var, {})
         if info.get("sig"):
             p = info["p"]
             stars = "***" if p < 0.001 else "**" if p < 0.01 else "*"
-            ax.set_title(f"{var.replace('_', ' ').title()} {stars}\n(ε²={info['eps_sq']:.4f})",
-                         fontweight="bold")
+            label = info["effect"]
+            ax.set_title(f"{var.replace('_', ' ').title()}  {stars} ({label} effect)",
+                         fontweight="bold", fontsize=12)
         else:
-            ax.set_title(f"{var.replace('_', ' ').title()} (ns)", fontweight="bold", color="gray")
+            ax.set_title(f"{var.replace('_', ' ').title()}  (not significant)",
+                         fontweight="bold", fontsize=12, color="gray")
 
-    plt.tight_layout()
+    # Legend
+    fig.text(0.5, 0.01,
+             "● = mean  |  *** p < 0.001, * p < 0.05  |  Shape width = data density  |  Dashed lines = quartiles",
+             ha="center", fontsize=9, style="italic", color="gray")
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.96])
     plt.savefig(f"{FIG_DIR}/main_effects.png", dpi=150, bbox_inches="tight")
     plt.close()
 
 
 def plot_interaction(stats_df):
-    """Single Lean × Sentiment heatmap."""
-    fig, ax = plt.subplots(figsize=(7, 5))
-    pivot = stats_df.pivot_table(values="mean", index="lean", columns="sentiment", aggfunc="mean")
-    sns.heatmap(pivot, annot=True, fmt=".2f", cmap="RdYlGn", center=0,
-                ax=ax, linewidths=0.5, annot_kws={"size": 14},
-                cbar_kws={"label": "Mean Shift"})
-    ax.set_title("Lean × Sentiment Interaction (Mean Shift)", fontweight="bold", fontsize=13)
-    ax.set_xlabel("Sentiment", fontsize=12)
-    ax.set_ylabel("Lean", fontsize=12)
-    ax.tick_params(labelsize=11)
-    plt.tight_layout()
-    plt.savefig(f"{FIG_DIR}/interaction.png", dpi=150, bbox_inches="tight")
+    """All 6 pairwise interaction heatmaps with unified color scale."""
+    from itertools import combinations
+
+    # Compute global min/max for unified color scale
+    all_means = []
+    pairs = list(combinations(VARIABLES, 2))
+    for v1, v2 in pairs:
+        pivot = stats_df.pivot_table(values="mean", index=v1, columns=v2, aggfunc="mean")
+        all_means.extend(pivot.values.flatten())
+    vmin = min(all_means)
+    vmax = max(all_means)
+    # Round to nice boundaries
+    vmin = max(0, np.floor(vmin * 10) / 10)
+    vmax = np.ceil(vmax * 10) / 10
+
+    # Reorder: most interesting interactions first
+    pair_order = [
+        ("sentiment", "lean"),       # most important
+        ("text_type", "lean"),
+        ("technique", "lean"),
+        ("text_type", "sentiment"),
+        ("technique", "sentiment"),
+        ("text_type", "technique"),   # least interesting
+    ]
+
+    fig, axes = plt.subplots(2, 3, figsize=(18, 11))
+    fig.suptitle("Interaction Effects: Mean Belief Shift Across Variable Pairs",
+                 fontsize=16, fontweight="bold")
+
+    for ax, (v1, v2) in zip(axes.flat, pair_order):
+        pivot = stats_df.pivot_table(values="mean", index=v1, columns=v2, aggfunc="mean")
+
+        # Shorten technique labels
+        if v1 == "technique":
+            pivot.index = [TECH_SHORT.get(t, t) for t in pivot.index]
+        if v2 == "technique":
+            pivot.columns = [TECH_SHORT.get(t, t) for t in pivot.columns]
+
+        sns.heatmap(pivot, annot=True, fmt=".2f", cmap="RdYlGn",
+                    vmin=vmin, vmax=vmax,
+                    ax=ax, linewidths=0.5, annot_kws={"size": 11},
+                    cbar_kws={"shrink": 0.8, "label": ""})
+
+        v1_label = v1.replace("_", " ").title()
+        v2_label = v2.replace("_", " ").title()
+        ax.set_title(f"{v1_label} × {v2_label}", fontweight="bold", fontsize=12)
+        ax.set_xlabel(v2_label, fontsize=10)
+        ax.set_ylabel(v1_label, fontsize=10)
+        ax.tick_params(labelsize=9)
+
+    # Global color bar explanation
+    fig.text(0.5, 0.01,
+             f"Color scale: {vmin:.1f} (low shift) → {vmax:.1f} (high shift)  |  Same scale across all panels for direct comparison",
+             ha="center", fontsize=9, style="italic", color="gray")
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.96])
+    plt.savefig(f"{FIG_DIR}/interactions.png", dpi=150, bbox_inches="tight")
     plt.close()
 
 
 def plot_distributions(results_df):
-    """Shift percentage distributions for lean and sentiment."""
+    """Bar charts for the two significant variables + all 4 variables overview."""
+    # Part 1: Detailed bar chart for significant variables
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    fig.suptitle("Shift Distribution by Significant Variables", fontsize=14, fontweight="bold")
-
-    shift_labels = {-2: "Str.\nDisagree", -1: "Disagree", 0: "Neutral", 1: "Agree", 2: "Str.\nAgree"}
-    all_shifts = list(range(-2, 3))
+    fig.suptitle("Mean Belief Shift: Significant Variables", fontsize=14, fontweight="bold")
 
     for ax, var in zip(axes, ["lean", "sentiment"]):
-        for level in sorted(results_df[var].unique()):
-            sub = results_df[results_df[var] == level]
-            counts = sub["shift"].value_counts().reindex(all_shifts, fill_value=0).sort_index()
-            pct = counts / len(sub) * 100
-            ax.plot(all_shifts, pct.values, marker="o", label=level, linewidth=2)
-        ax.set_xlabel("Final Belief")
-        ax.set_ylabel("Percentage (%)")
-        ax.set_title(var.replace("_", " ").title(), fontweight="bold")
-        ax.set_xticks(all_shifts)
-        ax.set_xticklabels([shift_labels[s] for s in all_shifts], fontsize=8)
-        ax.legend()
-        ax.grid(alpha=0.3)
+        means = results_df.groupby(var)["shift"].mean()
+        order = means.sort_values(ascending=False).index.tolist()
+        vals = [means[k] for k in order]
+        colors = ["#2ecc71", "#f39c12", "#e74c3c"]
+        bars = ax.bar(order, vals, color=colors, edgecolor="black", linewidth=0.5, width=0.6)
+        for bar, v in zip(bars, vals):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,
+                    f"{v:.2f}", ha="center", va="bottom", fontweight="bold", fontsize=13)
+        ax.set_ylabel("")
+        ax.set_title(var.replace("_", " ").title(), fontweight="bold", fontsize=13)
+        ax.set_ylim(0, max(vals) * 1.2)
+        ax.axhline(y=0, color="black", linewidth=0.5)
 
-    plt.tight_layout()
-    plt.savefig(f"{FIG_DIR}/distributions.png", dpi=150, bbox_inches="tight")
+    fig.text(0.5, 0.01,
+             "Scale: 0 = no change from neutral  |  1 = shifted to agree  |  2 = shifted to strongly agree",
+             ha="center", fontsize=9, style="italic", color="gray")
+
+    plt.tight_layout(rect=[0, 0.04, 1, 0.95])
+    plt.savefig(f"{FIG_DIR}/mean_shift.png", dpi=150, bbox_inches="tight")
     plt.close()
 
 
@@ -387,56 +473,16 @@ def main():
     claim_type_comparison(results_df)
     ranking_summary(results_df)
 
-    # CSV output - designed for human reading
-    if len(effects_report):
-        # Pivot: one row per variable, columns for both tests and measures
-        rows = []
-        for var in VARIABLES:
-            row = {"variable": var}
-            for measure in ["shift", "abs_shift"]:
-                prefix = "raw" if measure == "shift" else "abs"
-                kw = effects_report[(effects_report["variable"]==var) & 
-                     (effects_report["measure"]==measure) & 
-                     (effects_report["test"]=="Kruskal-Wallis")]
-                av = effects_report[(effects_report["variable"]==var) & 
-                     (effects_report["measure"]==measure) & 
-                     (effects_report["test"]=="ANOVA")]
-                if len(kw):
-                    k = kw.iloc[0]
-                    row[f"{prefix}_H"] = k["statistic"]
-                    row[f"{prefix}_p"] = f"{k['p']:.2e}"
-                    row[f"{prefix}_effect"] = f"{k['effect_size']} ({k['effect_label']})"
-                    row[f"{prefix}_sig"] = "yes" if k["significant"] else "no"
-            rows.append(row)
-        pd.DataFrame(rows).to_csv("main_effects.csv", index=False)
-        print(f"\nSaved: main_effects.csv")
-
-    if len(pairs_report):
-        pr = pairs_report[pairs_report["sig"] == True].copy()
-        out_rows = []
-        for _, r in pr.iterrows():
-            out_rows.append({
-                "variable": r["variable"],
-                "measure": "raw" if r["measure"] == "shift" else "absolute",
-                "comparison": f"{r['a']} vs {r['b']}",
-                "means": f"{r['mean_a']:.3f} vs {r['mean_b']:.3f}",
-                "diff": round(r["diff"], 3),
-                "effect_r": round(r["rank_biserial_r"], 3),
-                "p_adj": f"{r['p_adj']:.2e}",
-            })
-        pd.DataFrame(out_rows).to_csv("pairwise_comparisons.csv", index=False)
-        print(f"Saved: pairwise_comparisons.csv ({len(out_rows)} significant pairs)")
-
-    # Figures
+    # Figures only, no CSV
     print("\nGenerating figures...")
     plot_main_effects(results_df, sig_vars)
-    print(f"  {FIG_DIR}/main_effects.png")
+    print(f"  {FIG_DIR}/main_effects.png  (violin plots)")
     plot_distributions(results_df)
-    print(f"  {FIG_DIR}/distributions.png")
+    print(f"  {FIG_DIR}/mean_shift.png    (bar charts)")
     plot_interaction(stats_df)
-    print(f"  {FIG_DIR}/interaction.png")
+    print(f"  {FIG_DIR}/interactions.png  (6 heatmaps)")
 
-    print(f"\nDone.")
+    print(f"\nDone. All figures in {FIG_DIR}/")
 
 
 if __name__ == "__main__":
