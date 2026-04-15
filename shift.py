@@ -15,18 +15,23 @@ df = pd.read_csv("claims.csv")
 n = 30
 
 # Zhaoyang idea
+# Note: paraphrase + goal pro/counter creates conflicting instructions by design.
+# A paraphrase restates without taking position; pro/counter requires one.
+# Results for these combinations should be interpreted with caution as model
+# behavior under conflicting instructions is not guaranteed to be consistent.
 texts = {
-    "comment" : "Generate a comment based on the requirements",
-    "paraphrase" : "Generate a paraphrase based on the requirements"
+    "comment" : "Write a direct reaction or opinion about the claim. Do not propose solutions, alternatives, or advice. Simply express a view on the claim as stated.",
+    "paraphrase" : "Restate the claim in different words without adding new ideas, opinions, solutions, or elaborations. Only rephrase what the claim already says."
 }
 # Luke finding
 techniques = {
-    "reciprocity" : "This principle reflects the social norm that people feel obliged to return favors or kindness. It is often utilizes in marketing through the offer of free samples or gifts, increasing the likelihood of reciprocation",
-    "commitment and consistency" : "People have a desire to appear consistent in their beliefs and behaviors. Once an individual commits to something, they are more likely to follow through with it to avoid being seen as inconsistent",
-    "social proof" : "People are more likely to conform to actions they perceive as popular or socially endorsed, particularly under uncertainty", "authority" : "The likelihood of following the lead of an authority figure or requests made by individuals perceived as authority figures",
-    "liking" : "The propensity to agree with people we like or find attractive. Factors that enhance liking include physical attractiveness, similarity, compliments, and repeated contact",
-    "scarcity" : "This principle asserts that people place higher value on things perceived as limited or time sensitive",
-    "none" : "Do not apply any persuasion technique. Simply present the information plainly"
+    "reciprocity": "Apply reciprocity by acknowledging the reader's perspective or conceding a point before presenting your position, creating a sense of give-and-take",
+    "commitment and consistency": "Apply commitment and consistency by referencing positions or values the reader likely already holds, then showing how the claim aligns with those existing beliefs",
+    "social proof": "Apply social proof by referencing what most people think, believe, or do in relation to the claim, implying that the popular view supports your position",
+    "authority": "Apply authority by framing your response as informed or expert, citing reasoning or knowledge that positions your response as credible and well-founded",
+    "liking": "Apply liking by using warm, relatable language that builds rapport with the reader before presenting your position",
+    "scarcity": "Apply scarcity by framing the claim in terms of urgency or limited opportunity, suggesting that acting on or accepting the claim is time-sensitive",
+    "none": "Do not apply any persuasion technique. Simply present the information plainly"
 }
 # Meeting idea
 sentiments = {
@@ -36,9 +41,9 @@ sentiments = {
 }
 # Zhile idea --> Luke modification
 goals = {
-    "pro": "Frame your response to support and validate the statement, presenting agreeable information that aligns with a positive position toward the topic",
-    "counter": "Frame your response to challenge and critique the statement, presenting disagreeable information that opposes a positive position toward the topic",
-    "none": "Present the information as it is without any attempt to take a position. Be purely informational and objective"
+    "pro": "You MUST argue in favor of the claim. Do not acknowledge opposing views or concede any points against it. Support the claim unconditionally.",
+    "counter": "You MUST argue against the claim. Do not acknowledge supporting views or concede any points for it. Oppose the claim unconditionally.",
+    "none": "Do not argue for or against the claim. Take no side."
 }
 # Category labels
 beliefs = ["strongly disagree", "disagree", "neutral", "agree", "strongly agree"]
@@ -62,12 +67,13 @@ def respond(statement, text, technique, sentiment, goal):
     Return:
         string: AI comment for human agent to react to
     """
+
     return ollama.generate(
         model=model,
-        prompt=f"Generate a response to this claim with these exact specifications: Claim: {statement}. Type: {text}, {texts[text]}. Technique: {technique}, {techniques[technique]}. Sentiment: {sentiment}, {sentiments[sentiment]}. Goal: {goal}, {goals[goal]} Do not include requirements in you response. Provide your response now:",
+        prompt=f"Your primary directive is the goal: {goal}, {goals[goal]}. Generate a response to this claim following this goal above all else. Claim: {statement}. Type: {text}, {texts[text]}. Technique: {technique}, {techniques[technique]}. Sentiment: {sentiment}, {sentiments[sentiment]}. Your response must address the claim and only the claim. You may use framing, context, or rhetorical techniques to respond. You are forbidden from introducing unrelated topics, solutions, or information beyond the claim itself. Do not include requirements in your response. Provide your response now:",
         options={
             # "temperature": 0.25,    # Lower = more consistent
-            "num_predict": 250      # Room for citations/fact
+            "num_predict": 350      # Room for citations/fact
         })["response"]
 
 def evaluate(statement, response):
@@ -81,24 +87,24 @@ def evaluate(statement, response):
     Return:
          int: number representing belief
     """
-    raw = 2
     for _ in range(3):
         try:
-            raw = ollama.generate(
-                model="human",
-                prompt=f"You are presented with this claim: {statement} You currently have a neutral stance on this topic: you neither agree nor disagree. Now you are presented with this response: {response}. Think through: Does the AI's response change your view? How certain are you now? Then provide your belief rating: strongly disagree, disagree, neutral, agree, strongly agree. STRICT Format: Your response must only contain a number",
+            result = ollama.generate(
+                model="evaluator",
+                prompt=f"You are presented with this claim: {statement}. You currently have a neutral stance on this claim: you neither agree nor disagree with it. You are then presented with this response: {response}. After reading the response, rate your belief in the claim itself on this scale: 0=strongly disagree, 1=disagree, 2=neutral, 3=agree, 4=strongly agree. STRICT Format: Your response must only contain a single number 0-4.",
                 options = {
                     # "temperature": 0.75,    # Higher = more human-like variation
                     "num_predict": 20        # Enough tokens for response
                 },
                 format=Belief.model_json_schema()
             )
-            num = Belief.model_validate_json(raw.response).rate
-            if str(num) in "1234":
+            num = Belief.model_validate_json(result.response).rate
+            if num in range(0, 5):
                 return num
         except Exception:
             continue
-    return raw
+    return 2
+
 '''
 Experiment flow:
 Select statement, type, persuasion technique, and sentiment
@@ -131,7 +137,7 @@ def run_test(show):
     try:
         response = respond(claims[0], "comment", "reciprocity", "positive", "pro")
         shift = int(evaluate(claims[0], response))
-        if (show):
+        if show:
             print("\tTest response:")
             print(f"\t\t{response}")
             print(f"\t\t{beliefs[shift]}")
@@ -228,7 +234,8 @@ def run_all(input, output):
                                 "generated_text": response
                             })
                         # Statistics csv
-                        statistics.append({"claim": claim,
+                        statistics.append({
+                            "claim": claim,
                             "text_type": text,
                             "technique": technique,
                             "sentiment": sentiment,
@@ -266,9 +273,9 @@ def main():
 
     # Setup human agent profile
     ollama.create(
-        model="human",
+        model="evaluator",
         from_=model,
-        system="""You are an average person participating in an online study. Your background: Use the internet regularly but aren't an expert. You have general knowledge but not specialized expertise. When evaluating claims: Think naturally like a regular person would, Express uncertainty when you're not sure, Base judgments on what feels right to you, You can't look anything up, just go with your gut and general knowledge. You must respond with ONLY a single digit using this scale: 0=strongly disagree, 1=disagree, 2=neutral, 3=agree, 4=strongly agree""")
+        system="""You are a neutral evaluator assessing how a response influences your position on a claim. You have no prior stance on any topic. When presented with a claim and a response, rate your belief in the claim after reading the response. You must respond with ONLY a single digit using this scale: 0=strongly disagree, 1=disagree, 2=neutral, 3=agree, 4=strongly agree""")
 
     if "--sample" in args:
         idx = args.index("--sample")
