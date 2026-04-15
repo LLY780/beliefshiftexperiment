@@ -8,9 +8,7 @@ import pandas as pd
 from pydantic import BaseModel
 
 # Data sets containing fact and opinion statements
-# facts = pd.read_csv("fact.csv")["claim"].tolist()     # Compiled and reformated by Claude.ai from FAViQ
-# opins = pd.read_csv("opinion.csv")["claim"].tolist()  # Created by Claude.ai
-df = pd.read_csv("claims.csv")
+df = pd.read_csv("claims.csv")  # Facts compiled and reformated by Claude.ai, opinions created by Claude.ai
 # claims = df[df["type"] == "opinion"]["claim"].tolist()    # fact.csv and opinion.csv merged
 n = 30
 
