@@ -83,7 +83,7 @@ def kruskal_wallis_test(df, groupby, value_col):
     n = sum(len(g) for g in groups)
     eps_sq = H / (n - 1) if n > 1 else 0
     return {"H": H, "p": p, "eps_sq": eps_sq,
-            "effect": "large" if eps_sq > 0.14 else "medium" if eps_sq > 0.06 else "small",
+            "effect": "large" if eps_sq > 0.14 else "medium" if eps_sq > 0.06 else "small" if eps_sq > 0.01 else "negligible",
             "sig": p < ALPHA}
 
 def anova_test(df, groupby, value_col):
@@ -97,7 +97,7 @@ def anova_test(df, groupby, value_col):
     ss_total = ((df[value_col] - grand_mean)**2).sum()
     eta_sq = ss_between / ss_total if ss_total > 0 else 0
     return {"F": F, "p": p, "eta_sq": eta_sq,
-            "effect": "large" if eta_sq > 0.14 else "medium" if eta_sq > 0.06 else "small",
+            "effect": "large" if eta_sq > 0.14 else "medium" if eta_sq > 0.06 else "small" if eta_sq > 0.01 else "negligible",
             "sig": p < ALPHA}
 
 def mann_whitney_pairwise(df, groupby, value_col):
@@ -309,9 +309,11 @@ def plot_main_effects(results_df, variables, sig_vars):
             ax.tick_params(axis="x", rotation=0, labelsize=9)
 
         info = sig_vars.get(var, {})
-        if info.get("sig"):
+        if info.get("sig") and info.get("effect") != "negligible":
             stars = "***" if info["p"] < 0.001 else "**" if info["p"] < 0.01 else "*"
             ax.set_title(f"{shorten(var)}  {stars} ({info['effect']} effect)", fontweight="bold", fontsize=12)
+        elif info.get("sig") and info.get("effect") == "negligible":
+            ax.set_title(f"{shorten(var)}  (negligible effect)", fontweight="bold", fontsize=12, color="gray")
         else:
             ax.set_title(f"{shorten(var)}  (not significant)", fontweight="bold", fontsize=12, color="gray")
 
@@ -380,33 +382,49 @@ def plot_interaction(stats_df, variables):
 
 
 def plot_mean_shift(results_df, variables, sig_vars):
-    """Bar charts for significant variables."""
-    sig_list = [v for v in variables if sig_vars.get(v, {}).get("sig")]
-    if not sig_list:
-        print("  No significant variables for bar chart")
+    """Bar charts for variables with meaningful effects (not negligible, ≤5 levels)."""
+    # Filter: significant, not negligible, and few enough levels for clean bars
+    show_list = []
+    for v in variables:
+        info = sig_vars.get(v, {})
+        n_levels = results_df[v].nunique()
+        if info.get("sig") and info.get("effect") != "negligible" and n_levels <= 5:
+            show_list.append(v)
+
+    if not show_list:
+        print("  No variables suitable for bar chart")
         return
 
-    n = len(sig_list)
-    fig, axes = plt.subplots(1, n, figsize=(5 * n, 5))
-    fig.suptitle("Mean Belief Shift: Significant Variables", fontsize=14, fontweight="bold")
+    # Compute unified Y-axis max
+    global_max = 0
+    for var in show_list:
+        m = results_df.groupby(var)["shift"].mean().max()
+        if m > global_max:
+            global_max = m
+    y_max = global_max * 1.2
+
+    n = len(show_list)
+    fig, axes = plt.subplots(1, n, figsize=(max(4, 4 * n), 5))
+    fig.suptitle("Mean Belief Shift: Variables with Meaningful Effects", fontsize=14, fontweight="bold")
 
     if n == 1:
         axes = [axes]
 
-    for ax, var in zip(axes, sig_list):
+    for ax, var in zip(axes, show_list):
         means = results_df.groupby(var)["shift"].mean()
         order = means.sort_values(ascending=False).index.tolist()
         vals = [means[k] for k in order]
         n_bars = len(order)
-        colors = sns.color_palette("RdYlGn", n_bars)[::-1] if n_bars > 3 else ["#2ecc71", "#f39c12", "#e74c3c"][:n_bars]
+        colors = ["#2ecc71", "#f39c12", "#e74c3c"][:n_bars] if n_bars <= 3 else sns.color_palette("RdYlGn", n_bars)[::-1]
         short_labels = [shorten(x) for x in order]
         bars = ax.bar(short_labels, vals, color=colors, edgecolor="black", linewidth=0.5, width=0.6)
         for bar, v in zip(bars, vals):
             ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,
                     f"{v:.2f}", ha="center", va="bottom", fontweight="bold", fontsize=13)
         ax.set_ylabel("")
-        ax.set_title(shorten(var), fontweight="bold", fontsize=13)
-        ax.set_ylim(0, max(vals) * 1.2)
+        info = sig_vars.get(var, {})
+        ax.set_title(f"{shorten(var)} ({info.get('effect', '')} effect)", fontweight="bold", fontsize=13)
+        ax.set_ylim(0, y_max)
         ax.axhline(y=0, color="black", linewidth=0.5)
 
     fig.text(0.5, 0.01,
