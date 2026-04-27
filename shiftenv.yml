@@ -1,0 +1,11 @@
+name: beliefshiftexperiment
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.13
+  - ollama
+  - pandas
+  - pydantic
+  - conda-forge::ollama-python
+prefix: /Users/lukely/miniconda3/envs/beliefshiftexperiment
