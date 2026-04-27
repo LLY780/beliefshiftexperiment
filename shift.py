@@ -74,7 +74,7 @@ def respond(statement, text, technique, sentiment, goal):
             "num_predict": 350      # Room for citations/fact
         })["response"]
 
-def evaluate(statement, response):
+def evaluate(history):
     """
     Evaluates belief from a strongly disagree to strongly agree
     Created by Luke
@@ -87,9 +87,9 @@ def evaluate(statement, response):
     """
     for _ in range(3):
         try:
-            result = ollama.generate(
+            result = ollama.chat(
                 model="evaluator",
-                prompt=f"You are presented with this claim: {statement}. You currently have a neutral stance on this claim: you neither agree nor disagree with it. You are then presented with this response: {response}. After reading the response, rate your belief in the claim itself on this scale: 0=strongly disagree, 1=disagree, 2=neutral, 3=agree, 4=strongly agree. STRICT Format: Your response must only contain a single number 0-4.",
+                history=history,
                 options = {
                     # "temperature": 0.75,    # Higher = more human-like variation
                     "num_predict": 20        # Enough tokens for response
@@ -102,6 +102,16 @@ def evaluate(statement, response):
         except Exception:
             continue
     return 2
+
+def run_response(statement, response):
+    history = [
+        {"role":"user", "content":f"You are presented with this claim: {statement}. Rate your belief in the claim itself on this scale: 0=strongly disagree, 1=disagree, 2=neutral, 3=agree, 4=strongly agree. STRICT Format: Your response must only contain a single number 0-4."}
+    ]
+    init = evaluate(history)
+    history.append({"role":"assistant", "content":init})
+    history.append({"role":"user", "content":f"You are then presented with this response: {response}. After reading the response, rate your belief in the claim itself on this scale: 0=strongly disagree, 1=disagree, 2=neutral, 3=agree, 4=strongly agree. STRICT Format: Your response must only contain a single number 0-4."})
+    shift = evaluate(history)
+    return init, shift
 
 '''
 Experiment flow:
@@ -134,10 +144,11 @@ def run_test(show):
     s = time.time()
     try:
         response = respond(claims[0], "comment", "reciprocity", "positive", "pro")
-        shift = int(evaluate(claims[0], response))
+        init, shift = run_response(claims[0], response)
         if show:
             print("\tTest response:")
             print(f"\t\t{response}")
+            print(f"\t\t{beliefs[init]}")
             print(f"\t\t{beliefs[shift]}")
     except Exception as e:
         print(f"\tError: {e}")
@@ -157,21 +168,25 @@ def run_eval(statement, text, technique, sentiment, goal):
         tuple: (results, mean, median, abs mean, abs median)
     """
     results = []
+    inits = []
     shifts = []
     print("\tEvaluating: ", end="", flush=True)
     for i in range(n):
         # Implement print statement to show progress of evaluation double tab
         response = respond(statement, text, technique, sentiment, goal)
-        shift = max(0, min(4, int(evaluate(statement, response))))
+        init, shift = run_response(statement, response)
         print("#", end="", flush=True)
         final = beliefs[shift]
-        shifts.append(shift - 2)
-        results.append((final, shift - 2, response))
+        inits.append(init-2)
+        shifts.append(shift-2)
+        results.append((final, init-2, shift-2, response))
     print()
+    inits.sort()
     shifts.sort()
+    abs_inits = [abs(i) for i in inits]
     abs_results = [abs(s) for s in shifts]
     # regular mean shows direction, abs shows magnitude
-    return (results, sum(shifts)/n, sum(abs_results)/n)
+    return (results, sum(inits)/n, sum(abs_inits)/n, sum(shifts)/n, sum(abs_results)/n)
 
 def run_all(input, output):
     """
@@ -217,10 +232,10 @@ def run_all(input, output):
                             continue
                         print(f"\t[{count}/{total}] {text} | {technique} | {sentiment} | {goal}", end="\n\t")
                         # Generated end
-                        evaluations, mean, abs_mean = run_eval(claim, text, technique, sentiment, goal)
+                        evaluations, mean_init, abs_mean_init, mean_shift, abs_mean_shift = run_eval(claim, text, technique, sentiment, goal)
                         # Results csv
                         for evaluation in evaluations:
-                            final, shift, response = evaluation
+                            final, init, shift, response = evaluation
                             results.append({
                                 "claim": claim,
                                 "text_type": text,
@@ -228,6 +243,7 @@ def run_all(input, output):
                                 "sentiment": sentiment,
                                 "goal": goal,
                                 "final_belief": final,
+                                "init": init,
                                 "shift": shift,
                                 "generated_text": response
                             })
@@ -238,8 +254,10 @@ def run_all(input, output):
                             "technique": technique,
                             "sentiment": sentiment,
                             "goal": goal,
-                            "mean": mean,
-                            "abs_mean": abs_mean
+                            "mean_init": mean_init,
+                            "abs_mean_init": abs_mean_init,
+                            "mean_shift": mean_shift,
+                            "abs_mean_shift": abs_mean_shift
                         })
                         # Incremental save after every combination
                         pd.DataFrame(results).to_csv(results_file, index=False)
@@ -329,16 +347,16 @@ def main():
 
     if "--eval" in args:
         print(f"Evaluating: {text}, {technique}, {sentiment}, {goal}")
-        results, mean, abs_mean= run_eval(statement, text, technique, sentiment, goal)
-        print(f"\tMean: {mean} | Absolute Mean: {abs_mean}")
+        results, mean_init, abs_mean_init, mean_shift, abs_mean_shift = run_eval(statement, text, technique, sentiment, goal)
+        print(f"\tMean Init: {mean_init} |  Mean Shift: {mean_shift} | Absolute Mean Init: {abs_mean_init} | Absolute Mean Shift: {abs_mean_shift}")
         return
 
     print(f"Running: {statement}")
     print(f"\tResponse: {text} | Technique: {technique} | Sentiment: {sentiment} | goal: {goal}")
-    results, mean, abs_mean = run_eval(statement, text, technique, sentiment, goal)
-    response = results[0][2]
+    results, mean_init, abs_mean_init, mean_shift, abs_mean_shift = run_eval(statement, text, technique, sentiment, goal)
+    response = results[0][3]
     print(f"\tGenerated text: {response}")
-    print(f"\tMean shift: {mean} | Absolute_mean shift: {abs_mean}")
+    print(f"\tMean Init: {mean_init} |  Mean Shift: {mean_shift} | Absolute Mean Init: {abs_mean_init} | Absolute Mean Shift: {abs_mean_shift}")
 
 if __name__ == "__main__":
     main()
