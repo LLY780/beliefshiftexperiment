@@ -27,15 +27,15 @@ FIG_DIR = "figures"
 ALPHA = 0.05
 
 # Known non-variable columns
-RESULTS_FIXED = {"claim", "final_belief", "shift", "generated_text", "abs_shift", "claim_type"}
-STATS_FIXED = {"claim", "mean", "median", "abs_mean", "abs_median", "claim_type"}
+RESULTS_FIXED = {"claim", "init", "shift", "generated_text", "belief_shift", "abs_shift", "claim_type"}
+STATS_FIXED = {"claim", "mean_init", "abs_mean_init", "mean_shift", "abs_mean_shift", "claim_type"}
 
 # Long labels that need abbreviation
 LABEL_SHORT = {
     "commitment and consistency": "Commitment",
     "social proof": "Social Proof",
 }
-SHIFT_LABELS = {-2: "Strongly\nDisagree", -1: "Disagree", 0: "No\nChange", 1: "Agree", 2: "Strongly\nAgree"}
+SHIFT_LABELS = {}  # No longer used; scale is now 0-100 continuous
 
 
 def shorten(label):
@@ -51,7 +51,16 @@ def shorten(label):
 def load_data(results_path, stats_path):
     r = pd.read_csv(results_path)
     s = pd.read_csv(stats_path)
-    r["abs_shift"] = r["shift"].abs()
+    # "init" = initial belief (0-100), "shift" = post-exposure belief (0-100)
+    # Compute actual belief shift and absolute shift
+    r["belief_shift"] = r["shift"] - r["init"]
+    r["abs_shift"] = r["belief_shift"].abs()
+
+    # Compute mean belief shift for stats (mean_shift is post-exposure, mean_init is initial)
+    if "mean_shift" in s.columns and "mean_init" in s.columns:
+        s["mean"] = s["mean_shift"] - s["mean_init"]
+    elif "mean" not in s.columns:
+        s["mean"] = 0
 
     # Auto-detect experimental variables
     variables = [c for c in r.columns if c not in RESULTS_FIXED]
@@ -134,10 +143,12 @@ def descriptive_stats(results_df, variables):
     for var in variables:
         print(f"\n--- {var} ---")
         desc = results_df.groupby(var).agg(
-            n=("shift", "count"),
-            mean_shift=("shift", "mean"),
-            median_shift=("shift", "median"),
-            std_shift=("shift", "std"),
+            n=("belief_shift", "count"),
+            mean_init=("init", "mean"),
+            mean_post=("shift", "mean"),
+            mean_shift=("belief_shift", "mean"),
+            median_shift=("belief_shift", "median"),
+            std_shift=("belief_shift", "std"),
             mean_abs_shift=("abs_shift", "mean"),
         ).round(3)
         print(desc.to_string())
@@ -151,7 +162,7 @@ def main_effects(results_df, variables):
     report = []
     sig_vars = {}
 
-    for measure, label in [("shift", "Raw Shift"), ("abs_shift", "Absolute Shift")]:
+    for measure, label in [("belief_shift", "Raw Shift"), ("abs_shift", "Absolute Shift")]:
         print(f"\n--- {label} ---")
         for var in variables:
             kw = kruskal_wallis_test(results_df, var, measure)
@@ -165,7 +176,7 @@ def main_effects(results_df, variables):
             if av:
                 print(f"    ANOVA (suppl.): F={av['F']:.2f}, p={av['p']:.2e}, η²={av['eta_sq']:.4f} ({av['effect']})")
 
-            if measure == "shift":
+            if measure == "belief_shift":
                 sig_vars[var] = {"sig": kw["sig"], "p": kw["p"], "eps_sq": kw["eps_sq"], "effect": kw["effect"]}
 
             report.append({
@@ -191,7 +202,7 @@ def pairwise_comparisons(results_df, variables):
     print("="*60)
 
     all_pairs = []
-    for measure, label in [("shift", "Raw"), ("abs_shift", "Absolute")]:
+    for measure, label in [("belief_shift", "Raw"), ("abs_shift", "Absolute")]:
         for var in variables:
             pairs = mann_whitney_pairwise(results_df, var, measure)
             if len(pairs) == 0:
@@ -230,9 +241,9 @@ def claim_type_comparison(results_df):
     print("="*60)
     for ct in types:
         sub = results_df[results_df["claim_type"] == ct]
-        print(f"  {ct}: mean={sub['shift'].mean():+.3f} abs_mean={sub['abs_shift'].mean():.3f} n={len(sub)}")
-    facts = results_df[results_df["claim_type"] == "fact"]["shift"].dropna()
-    opinions = results_df[results_df["claim_type"] == "opinion"]["shift"].dropna()
+        print(f"  {ct}: mean={sub['belief_shift'].mean():+.3f} abs_mean={sub['abs_shift'].mean():.3f} n={len(sub)}")
+    facts = results_df[results_df["claim_type"] == "fact"]["belief_shift"].dropna()
+    opinions = results_df[results_df["claim_type"] == "opinion"]["belief_shift"].dropna()
     if len(facts) > 0 and len(opinions) > 0:
         U, p = sp.mannwhitneyu(facts, opinions, alternative='two-sided')
         print(f"\n  Mann-Whitney U={U:.0f}, p={p:.2e}")
@@ -245,7 +256,7 @@ def ranking_summary(results_df, variables):
     print("\n  Variables ranked by effect size (Kruskal-Wallis ε² on raw shift):")
     var_effects = []
     for var in variables:
-        kw = kruskal_wallis_test(results_df, var, "shift")
+        kw = kruskal_wallis_test(results_df, var, "belief_shift")
         if kw:
             var_effects.append((var, kw["eps_sq"], kw["p"], kw["effect"], kw["sig"]))
     var_effects.sort(key=lambda x: x[1], reverse=True)
@@ -278,7 +289,7 @@ def plot_main_effects(results_df, variables, sig_vars):
         axes = axes.flat
 
     for idx, (ax, var) in enumerate(zip(axes, variables)):
-        order = results_df.groupby(var)["shift"].mean().sort_values(ascending=False).index.tolist()
+        order = results_df.groupby(var)["belief_shift"].mean().sort_values(ascending=False).index.tolist()
         n_levels = len(order)
 
         # Use shortened labels
@@ -286,21 +297,19 @@ def plot_main_effects(results_df, variables, sig_vars):
         plot_df = results_df.copy()
         plot_df["_plot_var"] = plot_df[var].map(lambda x: shorten(x))
 
-        sns.violinplot(data=plot_df, x="_plot_var", y="shift", order=short_order,
+        sns.violinplot(data=plot_df, x="_plot_var", y="belief_shift", order=short_order,
                        palette="Set2", inner="quartile", ax=ax, cut=0)
 
         # Mean markers + value labels (skip if too many levels)
-        means = results_df.groupby(var)["shift"].mean()
+        means = results_df.groupby(var)["belief_shift"].mean()
         for i, level in enumerate(order):
             ax.scatter(i, means[level], color="black", s=30, zorder=5)
             if n_levels <= 4:
-                ax.annotate(f"{means[level]:.2f}", (i, means[level]),
+                ax.annotate(f"{means[level]:.1f}", (i, means[level]),
                            textcoords="offset points", xytext=(15, 0),
                            fontsize=9, fontweight="bold")
 
-        ax.set_yticks([-2, -1, 0, 1, 2])
-        ax.set_yticklabels([SHIFT_LABELS[v] for v in [-2, -1, 0, 1, 2]], fontsize=8)
-        ax.set_ylabel("")
+        ax.set_ylabel("Belief shift (post − initial)")
         ax.set_xlabel("")
         ax.axhline(y=0, color="black", linewidth=0.8, linestyle="--", alpha=0.5)
         if n_levels > 4:
@@ -322,7 +331,7 @@ def plot_main_effects(results_df, variables, sig_vars):
         axes[idx].set_visible(False)
 
     fig.text(0.5, 0.01,
-             "● = mean  |  *** p < 0.001, * p < 0.05  |  Shape width = data density  |  Dashed lines = quartiles",
+             "● = mean  |  *** p < 0.001, * p < 0.05  |  Shape width = data density  |  Dashed line = no change (0)",
              ha="center", fontsize=9, style="italic", color="gray")
     plt.tight_layout(rect=[0, 0.03, 1, 0.96])
     plt.savefig(f"{FIG_DIR}/main_effects.png", dpi=150, bbox_inches="tight")
@@ -336,13 +345,14 @@ def plot_interaction(stats_df, variables):
     if n_pairs == 0:
         return
 
-    # Compute global min/max for unified color scale
+    # Compute global min/max for unified color scale (belief shift can be negative)
     all_means = []
     for v1, v2 in pairs:
         pivot = stats_df.pivot_table(values="mean", index=v1, columns=v2, aggfunc="mean")
         all_means.extend(pivot.values.flatten())
-    vmin = max(0, np.floor(min(all_means) * 10) / 10)
-    vmax = np.ceil(max(all_means) * 10) / 10
+    abs_max = max(abs(min(all_means)), abs(max(all_means)))
+    vmin = -abs_max
+    vmax = abs_max
 
     cols = min(n_pairs, 3)
     rows = math.ceil(n_pairs / cols)
@@ -398,7 +408,7 @@ def plot_mean_shift(results_df, variables, sig_vars):
     # Compute unified Y-axis max
     global_max = 0
     for var in show_list:
-        m = results_df.groupby(var)["shift"].mean().max()
+        m = results_df.groupby(var)["belief_shift"].mean().abs().max()
         if m > global_max:
             global_max = m
     y_max = global_max * 1.2
@@ -411,7 +421,7 @@ def plot_mean_shift(results_df, variables, sig_vars):
         axes = [axes]
 
     for ax, var in zip(axes, show_list):
-        means = results_df.groupby(var)["shift"].mean()
+        means = results_df.groupby(var)["belief_shift"].mean()
         order = means.sort_values(ascending=False).index.tolist()
         vals = [means[k] for k in order]
         n_bars = len(order)
@@ -419,16 +429,21 @@ def plot_mean_shift(results_df, variables, sig_vars):
         short_labels = [shorten(x) for x in order]
         bars = ax.bar(short_labels, vals, color=colors, edgecolor="black", linewidth=0.5, width=0.6)
         for bar, v in zip(bars, vals):
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,
-                    f"{v:.2f}", ha="center", va="bottom", fontweight="bold", fontsize=13)
+            # Position label above positive bars, below negative bars
+            if v >= 0:
+                ax.text(bar.get_x() + bar.get_width()/2, v + global_max * 0.03,
+                        f"{v:.2f}", ha="center", va="bottom", fontweight="bold", fontsize=13)
+            else:
+                ax.text(bar.get_x() + bar.get_width()/2, v - global_max * 0.03,
+                        f"{v:.2f}", ha="center", va="top", fontweight="bold", fontsize=13)
         ax.set_ylabel("")
         info = sig_vars.get(var, {})
         ax.set_title(f"{shorten(var)} ({info.get('effect', '')} effect)", fontweight="bold", fontsize=13)
-        ax.set_ylim(0, y_max)
+        ax.set_ylim(-y_max, y_max)
         ax.axhline(y=0, color="black", linewidth=0.5)
 
     fig.text(0.5, 0.01,
-             "Scale: 0 = no change from neutral  |  1 = shifted to agree  |  2 = shifted to strongly agree",
+             "Scale: belief shift = post-exposure score − initial score  |  0 = no change  |  Positive = shifted toward agree",
              ha="center", fontsize=9, style="italic", color="gray")
     plt.tight_layout(rect=[0, 0.04, 1, 0.95])
     plt.savefig(f"{FIG_DIR}/mean_shift.png", dpi=150, bbox_inches="tight")
@@ -463,7 +478,9 @@ def main():
         print(f"  {v}: {sorted(results_df[v].unique())}")
     print(f"Conditions: {len(stats_df)} combinations, {reps.min()}-{reps.max()} reps each")
     print(f"Claim types: {results_df['claim_type'].value_counts().to_dict()}")
-    print(f"Shift range: {results_df['shift'].min()} to {results_df['shift'].max()}")
+    print(f"Init range: {results_df['init'].min()} to {results_df['init'].max()}")
+    print(f"Post range: {results_df['shift'].min()} to {results_df['shift'].max()}")
+    print(f"Belief shift range: {results_df['belief_shift'].min()} to {results_df['belief_shift'].max()}")
 
     os.makedirs(FIG_DIR, exist_ok=True)
 
