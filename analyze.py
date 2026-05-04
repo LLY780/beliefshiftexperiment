@@ -51,6 +51,13 @@ def shorten(label):
 def load_data(results_path, stats_path):
     r = pd.read_csv(results_path)
     s = pd.read_csv(stats_path)
+
+    # Rename 'goal' to 'position' for clearer academic terminology
+    if "goal" in r.columns:
+        r = r.rename(columns={"goal": "position"})
+    if "goal" in s.columns:
+        s = s.rename(columns={"goal": "position"})
+
     # "init" = initial belief (0-100), "shift" = post-exposure belief (0-100)
     # Compute actual belief shift and absolute shift
     r["belief_shift"] = r["shift"] - r["init"]
