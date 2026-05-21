@@ -18,8 +18,8 @@ n = 30
 # Results for these combinations should be interpreted with caution as model
 # behavior under conflicting instructions is not guaranteed to be consistent.
 texts = {
-    "comment" : "Write a direct reaction or opinion about the claim. Do not propose solutions, alternatives, or advice. Simply express a view on the claim as stated.",
-    "paraphrase" : "Restate the claim in different words without adding new ideas, opinions, solutions, or elaborations. Only rephrase what the claim already says."
+    "comment" : "Write a direct reaction or opinion about the claim. Do not propose solutions, alternatives, or advice. Simply express a view on the claim as stated."
+    # "paraphrase" : "Restate the claim in different words without adding new ideas, opinions, solutions, or elaborations. Only rephrase what the claim already says."
 }
 # Luke finding
 techniques = {
@@ -33,15 +33,19 @@ techniques = {
 }
 # Meeting idea
 sentiments = {
-    "positive" : "Use optimistic, enthusiastic, or approving language with an encouraging and supportive tone",
-    "negative" : "Use dissatisfied, concerned, or disapproving language with a critical or cautious tone",
-    "neutral" : "Use balanced, objective, and emotionally unbiased language with a factual and impartial tone and no clear stance"
+    "extremely positive": "Use euphoric, deeply passionate, or overwhelmingly appreciative language — bold superlatives, exclamations, and intense emotional warmth that leaves no doubt about enthusiasm",
+    "moderately positive": "Use optimistic, enthusiastic, or approving language with an encouraging and supportive tone — clearly positive but measured and grounded",
+    "mildly positive": "Use gently favorable or quietly approving language with a warm, understated tone — a slight lean toward the positive without overt enthusiasm",
+    "neutral": "Use balanced, objective, and emotionally unbiased language with a factual and impartial tone and no clear stance",
+    "mildly negative": "Use slightly dissatisfied or gently cautionary language with a mild critical tone — a subtle lean toward concern without strong condemnation",
+    "moderately negative": "Use dissatisfied, concerned, or disapproving language with a clear critical or cautious tone — noticeably negative but not alarmist",
+    "extremely negative": "Use intensely alarmed, strongly disapproving, or deeply frustrated language with an urgent, blunt tone — pointed criticism and emotional weight that signals serious concern"
 }
 # Zhile idea --> Luke modification
 goals = {
     "pro": "You MUST argue in favor of the claim. Do not acknowledge opposing views or concede any points against it. Support the claim unconditionally.",
     "counter": "You MUST argue against the claim. Do not acknowledge supporting views or concede any points for it. Oppose the claim unconditionally.",
-    "none": "Do not argue for or against the claim. Take no side."
+    "none": "You MUST take no position on the claim. You may acknowledge supporting or opposing views and concede any points for or against it. Do not support or oppose the claim."
 }
 # Category labels
 # beliefs = ["strongly disagree", "disagree", "neutral", "agree", "strongly agree"]
@@ -246,6 +250,7 @@ def run_all(input, output):
                                 "init": init,
                                 "shift": shift,
                                 "generated_text": response
+                                # will need to separate level and sentiment (i.e. extremely positive)
                             })
                         # Statistics csv
                         statistics.append({
