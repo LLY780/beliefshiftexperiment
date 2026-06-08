@@ -45,14 +45,14 @@ sentiments = {
 goals = {
     "pro": "You MUST argue in favor of the claim. Do not acknowledge opposing views or concede any points against it. Support the claim unconditionally.",
     "counter": "You MUST argue against the claim. Do not acknowledge supporting views or concede any points for it. Oppose the claim unconditionally.",
-    "none": "You MUST take no position on the claim. You may acknowledge supporting or opposing views and concede any points for or against it. Do not support or oppose the claim."
+    "none": "You MUST take no position on the claim. Do not support or oppose the claim."
 }
 # Category labels
 # beliefs = ["strongly disagree", "disagree", "neutral", "agree", "strongly agree"]
 # JSON Schema for structured output
 class Belief(BaseModel):
     rate : int
-models = ["llama3.1:8b-instruct-q4_K_M", "mistral:instruct", "deepseek-llm:7b"]
+models = ["llama3.1:8b-instruct-q4_K_M", "mistral:instruct", "deepseek-llm:7b", "Any Ollama model (this will be changed later)"]
 
 # Functions
 def respond(statement, text, technique, sentiment, goal):
@@ -133,7 +133,20 @@ Clarifications:
 For each experiment run, the human agent only has context within their respective conversations (i.e. each human agent is aware of its previous response to build on top of it for the following response)
 '''
 
-# Consider removing this and transferring the running to evaluate
+def get_avgruntime():
+    # Dummy run to "warm up" ollama. First generate runs slow (may not be needed)
+    # response = respond(claims[0], "comment", "reciprocity", "positive", "pro")
+    # run_response(claims[0], response)
+    times = 0.0
+    for i in range(30):
+        try:
+            s = time.time()
+            response = respond(claims[0], "comment", "reciprocity", "moderately positive", "pro")
+            init, shift = run_response(claims[0], response)
+            times += time.time()-s
+        except Exception as e:
+            print(f"\tError: {e}")
+    return times/30
 
 def run_test(show):
     """
@@ -145,9 +158,8 @@ def run_test(show):
     Return:
         float: time it takes to run a single eval
     """
-    s = time.time()
     try:
-        response = respond(claims[0], "comment", "reciprocity", "positive", "pro")
+        response = respond(claims[0], "comment", "reciprocity", "moderately positive", "pro")
         init, shift = run_response(claims[0], response)
         if show:
             print("\tTest response:")
@@ -156,7 +168,7 @@ def run_test(show):
             print(f"\t\t{shift}")
     except Exception as e:
         print(f"\tError: {e}")
-    return time.time()-s
+    return get_avgruntime()
 
 def run_eval(statement, text, technique, sentiment, goal):
     """
@@ -292,7 +304,7 @@ def main():
     global model
     model = args[0]
 
-    # Setup human agent profile
+    # Setup evaluator profile
     ollama.create(
         model="evaluator",
         from_=model,
@@ -305,12 +317,12 @@ def main():
         size = int(args[idx + 2])
         global claims
         # facts = df[df["type"] == "fact"].sample(36, random_state=seed)
-        sampled = df[df["type"] == "opinion"].sample(size, random_state=seed)
+        sampled = df.sample(size, random_state=seed)
         # sampled = pd.concat([facts, opinions], ignore_index=True)
         print(f"Sampled {len(sampled)} claims")
         claims = sampled["claim"].tolist()
     else:
-        claims = df[df["type"] == "opinion"]["claim"].tolist()
+        claims = df["claim"].tolist()
 
     if "--n" in args:
         idx = args.index("--n")
