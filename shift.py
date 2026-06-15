@@ -148,7 +148,7 @@ def get_avgruntime():
             print(f"\tError: {e}")
     return times/30
 
-def run_test(show):
+def run_test():
     """
     Tests all essential functions by a single run of run_single to ensure readiness and working status of respond, evaluate, and run_single using one claim and set combo of metrics
     Created by Luke
@@ -161,11 +161,10 @@ def run_test(show):
     try:
         response = respond(claims[0], "comment", "reciprocity", "moderately positive", "pro")
         init, shift = run_response(claims[0], response)
-        if show:
-            print("\tTest response:")
-            print(f"\t\t{response}")
-            print(f"\t\t{init}")
-            print(f"\t\t{shift}")
+        print("\tTest response:")
+        print(f"\t\t{response}")
+        print(f"\t\t{init}")
+        print(f"\t\t{shift}")
     except Exception as e:
         print(f"\tError: {e}")
     return get_avgruntime()
@@ -291,6 +290,7 @@ def main():
         --all:
         --eval:
         --test:
+        todo: needs updates
     """
     args = sys.argv[1:]
     nargs = len(args)
@@ -324,15 +324,16 @@ def main():
     else:
         claims = df["claim"].tolist()
 
+    global n
+    n = 30
     if "--n" in args:
         idx = args.index("--n")
-        global n
         n = int(args[idx+1])
         print(f"Evaluations per combination set to {n}")
 
     if '--test' in args:
         print("Running test...")
-        runtime = run_test(True)
+        runtime = run_test()
         print(f"\tTest took {runtime} seconds")
         return
 
@@ -340,7 +341,8 @@ def main():
         idx = args.index("--all")
         output = args[idx+1]
         print("Running all claims through all conditions...")
-        runtime = run_test(False)
+        runtime = get_avgruntime()
+        print(int(runtime),len(claims),len(texts),len(techniques),len(sentiments),len(goals),n, runtime)
         print(f"Estimated total time: {(int(runtime)*len(claims)*len(texts)*len(techniques)*len(sentiments)*len(goals)*n)/60/60} hours")
         run_all(claims, output)
         return
