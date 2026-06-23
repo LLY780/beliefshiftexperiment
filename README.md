@@ -16,10 +16,9 @@ Output contains (inital belief, end belief) for all types of respones and claims
 The current experiment design is as follows: assign a neutral stance to the human agent and prompt the human agent for a belief based on an AI response. 
 The metrics used are: persuasion techniques ([source](https://www.sciencedirect.com/science/article/pii/S2949882125000817)) and sentiment values
 
-The following models are used: Llama 3.1, Mistral, Deepseek
-
+The following models are used: Llama 3.1:8b
 ### Installing the Models
-Depending on OS, run model.sh or model.bat to install the models
+Use ollama pull [model]
 
 ### Running the Experiment
 To be implemented
