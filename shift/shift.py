@@ -4,24 +4,19 @@ import sys
 import time
 
 import ollama
+from ollama import ResponseError
 import pandas as pd
 from pydantic import BaseModel
 
-# Data sets containing fact and opinion statements
-df = pd.read_csv("claims.csv")  # Facts compiled and reformated by Claude.ai, opinions created by Claude.ai
-# claims = df[df["type"] == "opinion"]["claim"].tolist()    # fact.csv and opinion.csv merged
+# GLOBAL VARS
+model = "none"
+claims = []
 n = 30
 
-# Zhaoyang idea
-# Note: paraphrase + goal pro/counter creates conflicting instructions by design.
-# A paraphrase restates without taking position; pro/counter requires one.
-# Results for these combinations should be interpreted with caution as model
-# behavior under conflicting instructions is not guaranteed to be consistent.
-texts = {
-    "comment" : "Write a direct reaction or opinion about the claim. Do not propose solutions, alternatives, or advice. Simply express a view on the claim as stated."
-    # "paraphrase" : "Restate the claim in different words without adding new ideas, opinions, solutions, or elaborations. Only rephrase what the claim already says."
-}
-# Luke finding
+# RESPONSE METRICS
+comment = "Write a direct reaction or opinion about the claim. Do not propose solutions, alternatives, or advice. Simply express a view on the claim as stated."
+
+# Cialdani's Principles of Persuasion
 techniques = {
     "reciprocity": "Apply reciprocity by acknowledging the reader's perspective or conceding a point before presenting your position, creating a sense of give-and-take",
     "commitment and consistency": "Apply commitment and consistency by referencing positions or values the reader likely already holds, then showing how the claim aligns with those existing beliefs",
@@ -31,7 +26,8 @@ techniques = {
     "scarcity": "Apply scarcity by framing the claim in terms of urgency or limited opportunity, suggesting that acting on or accepting the claim is time-sensitive",
     "none": "Do not apply any persuasion technique. Simply present the information plainly"
 }
-# Meeting idea
+
+# Suggested by Professor Reza Zafarani to expand sentiments to have levels
 sentiments = {
     "extremely positive": "Use euphoric, deeply passionate, or overwhelmingly appreciative language — bold superlatives, exclamations, and intense emotional warmth that leaves no doubt about enthusiasm",
     "moderately positive": "Use optimistic, enthusiastic, or approving language with an encouraging and supportive tone — clearly positive but measured and grounded",
@@ -41,342 +37,261 @@ sentiments = {
     "moderately negative": "Use dissatisfied, concerned, or disapproving language with a clear critical or cautious tone — noticeably negative but not alarmist",
     "extremely negative": "Use intensely alarmed, strongly disapproving, or deeply frustrated language with an urgent, blunt tone — pointed criticism and emotional weight that signals serious concern"
 }
-# Zhile idea --> Luke modification
+
+# Measurable effect on opinion with a goal-oriented opinion
 goals = {
     "pro": "You MUST argue in favor of the claim. Do not acknowledge opposing views or concede any points against it. Support the claim unconditionally.",
     "counter": "You MUST argue against the claim. Do not acknowledge supporting views or concede any points for it. Oppose the claim unconditionally.",
     "none": "You MUST take no position on the claim. Do not support or oppose the claim."
 }
-# Category labels
-# beliefs = ["strongly disagree", "disagree", "neutral", "agree", "strongly agree"]
+
 # JSON Schema for structured output
 class Belief(BaseModel):
-    rate : int
-models = ["llama3.1:8b-instruct-q4_K_M", "mistral:instruct", "deepseek-llm:7b", "Any Ollama model (this will be changed later)"]
+    rating : int
 
-# Functions
-def respond(statement, text, technique, sentiment, goal):
-    """
-    Generates an AI response
-    Created by Luke
-
-    Params:
-        statement (string): claim to respond to
-        text (string): comment or paraphrase
-        technique (string): Cialdini’s principles + none, linked in README
-        sentiment (string): positive, negative, neutral
-        goal (string): pro, counter, none
-    Return:
-        string: AI comment for human agent to react to
-    """
-
+# FUNCTIONS
+def respond(claim, technique, sentiment, goal):
     return ollama.generate(
         model=model,
-        prompt=f"Your primary directive is the goal: {goal}, {goals[goal]}. Generate a response to this claim following this goal above all else. Claim: {statement}. Type: {text}, {texts[text]}. Technique: {technique}, {techniques[technique]}. Sentiment: {sentiment}, {sentiments[sentiment]}. Your response must address the claim and only the claim. You may use framing, context, or rhetorical techniques to respond. You are forbidden from introducing unrelated topics, solutions, or information beyond the claim itself. Do not include requirements in your response. Provide your response now:",
+        prompt=f"Your primary directive is the goal: {goal}, {goals[goal]}. Generate a response to this claim following this goal above all else. Claim: {claim}. Technique: {technique}, {techniques[technique]}. Sentiment: {sentiment}, {sentiments[sentiment]}. Your response must address the claim and only the claim. You may use framing, context, or rhetorical techniques to respond. You are forbidden from introducing unrelated topics, solutions, or information beyond the claim itself. Do not include requirements in your response. Provide your response now:",
         options={
-            # "temperature": 0.25,    # Lower = more consistent
-            "num_predict": 350      # Room for citations/fact
+            "num_predict": 350  # Room for citations/fact
         })["response"]
 
 def evaluate(history):
-    """
-    Evaluates belief from a strongly disagree to strongly agree
-    Created by Luke
-
-    Params:
-        statement (string): claim to respond to
-        response (string): comment or paraphrase generated by AI
-    Return:
-         int: number representing belief
-    """
-    for _ in range(3):
+    while True:
         try:
             result = ollama.chat(
                 model="evaluator",
                 messages=history,
-                options = {
-                    # "temperature": 0.75,    # Higher = more human-like variation
-                    "num_predict": 20        # Enough tokens for response
+                options={
+                    "num_predict": 20  # Enough tokens for JSON schema
                 },
                 format=Belief.model_json_schema()
             )
-            num = Belief.model_validate_json(result.message.content).rate
+            num = Belief.model_validate_json(result.message.content).rating
             if num in range(0, 101):
                 return num
         except Exception:
             continue
-    return 50
-
-def run_response(statement, response):
-    history = [
-        {"role":"user", "content":f"You are presented with this claim: {statement}. Rate your belief in the claim itself on this scale: 0 = completely certain it's FALSE/completely DISAGREE, 100 = completely certain it's TRUE/completely AGREE, 50 = equally likely to be TRUE or FALSE/uncertain.. STRICT Format: Your response must only contain a single number 0-100."}
-    ]
-    init = evaluate(history)
-    history.append({"role":"assistant", "content":str(init)})
-    history.append({"role":"user", "content":f"You are then presented with this response: {response}. After reading the response, rate your belief in the claim itself on this scale: 0 = completely certain it's FALSE/completely DISAGREE, 100 = completely certain it's TRUE/completely AGREE, 50 = equally likely to be TRUE or FALSE/uncertain.. STRICT Format: Your response must only contain a single number 0-100."})
-    shift = evaluate(history)
-    return init, shift
-
-'''
-Experiment flow:
-Select statement, type, persuasion technique, and sentiment
-↓
-Generate either comment or paraphrasing of statement based on type and sentiment (tbd implementation)
-↓
-Present statement to human agent and rate on scale of strong disagree to strong agree (quantative --> categorical)
-↓
-Present human agent with comment or paraphrase and ask human agent to rate statement again on same scale
-↓
-Record both initial rate and end rate and measure shift
-
-Clarifications:
-For each experiment run, the human agent only has context within their respective conversations (i.e. each human agent is aware of its previous response to build on top of it for the following response)
-'''
-
-def get_avgruntime():
-    # Dummy run to "warm up" ollama. First generate runs slow (may not be needed)
-    # response = respond(claims[0], "comment", "reciprocity", "positive", "pro")
-    # run_response(claims[0], response)
-    times = 0.0
-    for i in range(30):
-        try:
-            s = time.time()
-            response = respond(claims[0], "comment", "reciprocity", "moderately positive", "pro")
-            init, shift = run_response(claims[0], response)
-            times += time.time()-s
-        except Exception as e:
-            print(f"\tError: {e}")
-    return times/30
 
 def run_test():
-    """
-    Tests all essential functions by a single run of run_single to ensure readiness and working status of respond, evaluate, and run_single using one claim and set combo of metrics
-    Created by Luke
-
-    Param:
-        show (boolean): to print output
-    Return:
-        float: time it takes to run a single eval
-    """
     try:
-        response = respond(claims[0], "comment", "reciprocity", "moderately positive", "pro")
-        init, shift = run_response(claims[0], response)
-        print("\tTest response:")
-        print(f"\t\t{response}")
-        print(f"\t\t{init}")
-        print(f"\t\t{shift}")
+        init, final, shift, response = run_single("Heavy social media use is associated with increased rates of loneliness among adults.","social proof","moderately positive","pro")
+        print("Output:")
+        print(f"\tinit:{init}")
+        print(f"\tfinal:{final}")
+        print(f"\tshift:{shift}")
+        print(f"{response}")
     except Exception as e:
-        print(f"\tError: {e}")
-    return get_avgruntime()
+        print(f"\terror: {e}")
 
-def run_eval(statement, text, technique, sentiment, goal):
-    """
-    Runs 30 tests to see the normal performance of a combination of metrics
+def run_single(claim, technique, sentiment, goal):
+    response = respond(claim,technique,sentiment,goal)
+    chat = [{"role":"user", "content":f"You are presented with this claim: {claim}. Rate your belief in the claim itself on this scale: 0 = completely certain it's FALSE/completely DISAGREE, 100 = completely certain it's TRUE/completely AGREE, 50 = equally likely to be TRUE or FALSE/uncertain. STRICT Format: Your response must only contain a single number 0-100."}]
+    init = evaluate(chat)
+    chat.append({"role": "assistant", "content": str(init)})
+    chat.append({"role":"user", "content":f"You are then presented with this response: {response}. After reading the response, rate your belief in the claim itself on this scale: 0 = completely certain it's FALSE/completely DISAGREE, 100 = completely certain it's TRUE/completely AGREE, 50 = equally likely to be TRUE or FALSE/uncertain. STRICT Format: Your response must only contain a single number 0-100."})
+    final = evaluate(chat)
+    shift = final-init
+    return init, final, shift, response
 
-    Params:
-        statement (string): claim to respond to
-        text (string): comment or paraphrase
-        technique (string): Cialdini’s principles, linked in README
-        sentiment (string): positive, negative, neutral
-        goal (string): pro, counter, none
-    Return:
-        tuple: (results, mean, median, abs mean, abs median)
-    """
-    results = []
+def run_eval(claim, technique, sentiment, goal):
     inits = []
+    finals = []
     shifts = []
-    print("\tEvaluating: ", end="", flush=True)
+    responses = []
+    print("Evaluating: ",end="",flush=True)
     for i in range(n):
-        # Implement print statement to show progress of evaluation double tab
-        response = respond(statement, text, technique, sentiment, goal)
-        init, shift = run_response(statement, response)
+        init, final, shift, response = run_single(claim,technique,sentiment,goal)
         print("#", end="", flush=True)
-        # final = beliefs[shift]
         inits.append(init)
+        finals.append(final)
         shifts.append(shift)
-        results.append((init, shift, response))
+        responses.append(response)
     print()
-    inits.sort()
-    shifts.sort()
-    abs_inits = [abs(i) for i in inits]
-    abs_results = [abs(s) for s in shifts]
-    # regular mean shows direction, abs shows magnitude
-    return (results, sum(inits)/n, sum(abs_inits)/n, sum(shifts)/n, sum(abs_results)/n)
+    abs_inits = [abs(j) for j in inits]
+    abs_finals = [abs(j) for j in finals]
+    abs_shifts = [abs(j) for j in shifts]
+    return inits, finals, shifts, abs_inits, abs_finals, abs_shifts, responses
 
-def run_all(input, output):
-    """
-    Run all conditions (type x appeal x framing) for a list of claims
-    Created by Zhile, modified by Luke
-
-    Params:
-        claims (list): list of claim strings
-        claim (string): "fact" or "opinion"
-        output (string): CSV file to save results
-    Return:
-        list: list of result dicts
-    """
-    results = []
-    statistics = []
-    total = len(input) * len(texts) * len(techniques) * len(sentiments) * len(goals)
+def run_all(export):
+    # Run vars
+    results = [] # List of dicts representing a csv entry
+    stats = [] # List of dicts representing a csv entry
+    total = len(claims)*len(techniques)*len(sentiments)*len(goals)
     count = 0
-    clean = output.replace(":", "_").replace("/", "_")
-    results_file = clean + "_results.csv"
-    stats_file = clean + "_stats.csv"
-    # Generated by Claude.ai
+    clean = export.replace(":", "_").replace("/", "_")
+    results_file = clean + ".results.csv"
+    stats_file = clean + ".stats.csv"
+
+    # Checkpoint system
     completed = set()
     if os.path.exists(results_file):
         existing = pd.read_csv(results_file)
         results = existing.to_dict("records")
         for _, row in existing.iterrows():
-            completed.add((row["claim"], row["text_type"], row["technique"], row["sentiment"], row["goal"]))
+            completed.add((row["claim"],row["technique"],row["sentiment"],row["goal"]))
         print(f"\tResuming from {len(completed)} completed combinations")
     if os.path.exists(stats_file):
         existing_stats = pd.read_csv(stats_file)
-        statistics = existing_stats.to_dict("records")
-    # Generate end
-    for claim in input:
+        stats = existing_stats.to_dict("records")
+
+    # Start testing claims
+    for claim in claims:
         print(f"\nClaim: {claim}")
-        for text in texts:
-            for technique in techniques:
-                for sentiment in sentiments:
-                    for goal in goals:
-                        count += 1
-                        # Generated
-                        if (claim, text, technique, sentiment, goal) in completed:
-                            print(f"\t[{count}/{total}] Completed - {text} | {technique} | {sentiment} | {goal}")
-                            continue
-                        print(f"\t[{count}/{total}] {text} | {technique} | {sentiment} | {goal}", end="\n\t")
-                        # Generated end
-                        evaluations, mean_init, abs_mean_init, mean_shift, abs_mean_shift = run_eval(claim, text, technique, sentiment, goal)
-                        # Results csv
-                        for evaluation in evaluations:
-                            init, shift, response = evaluation
-                            results.append({
-                                "claim": claim,
-                                "text_type": text,
-                                "technique": technique,
-                                "sentiment": sentiment,
-                                "goal": goal,
-                                # "final_belief": final,
-                                "init": init,
-                                "shift": shift,
-                                "generated_text": response
-                                # will need to separate level and sentiment (i.e. extremely positive)
-                            })
-                        # Statistics csv
-                        statistics.append({
-                            "claim": claim,
-                            "text_type": text,
-                            "technique": technique,
-                            "sentiment": sentiment,
-                            "goal": goal,
-                            "mean_init": mean_init,
-                            "abs_mean_init": abs_mean_init,
-                            "mean_shift": mean_shift,
-                            "abs_mean_shift": abs_mean_shift
+        for technique in techniques:
+            for sentiment in sentiments:
+                for goal in goals:
+                    count += 1
+                    if (claim,technique,sentiment,goal) in completed:
+                        print(f"\t[{count}/{total}] Completed - {technique} | {sentiment} | {goal}")
+                        continue
+                    print(f"\t[{count}/{total}] | {technique} | {sentiment} | {goal}", end="\n\t")
+                    inits, finals, shifts, abs_inits, abs_finals, abs_shifts, responses = run_eval(claim,technique,sentiment,goal)
+                    # Results compiling
+                    for i in range(n):
+                        results.append({
+                            "claim":claim,
+                            "technique":technique,
+                            "sentiment":sentiment,
+                            "goal":goal,
+                            "init":inits[i],
+                            "final":finals[i],
+                            "shift":shifts[i],
+                            "response":responses[i]
                         })
-                        # Incremental save after every combination
-                        pd.DataFrame(results).to_csv(results_file, index=False)
-                        pd.DataFrame(statistics).to_csv(stats_file, index=False)
+                    # Stats compiling
+                    stats.append({
+                        "claim":claim,
+                        "technique":technique,
+                        "sentiment":sentiment,
+                        "goal":goal,
+                        "mean_init":sum(inits)/n,
+                        "mean_final":sum(finals)/n,
+                        "mean_shift":sum(shifts)/n,
+                        "abs_mean_init":sum(inits)/n,
+                        "abs_mean_final":sum(finals)/n,
+                        "abs_mean_shift":sum(shifts)/n
+                    })
+                    # Incremental save after every combination
+                    pd.DataFrame(results).to_csv(results_file, index=False)
+                    pd.DataFrame(stats).to_csv(stats_file, index=False)
+
+    # End of run. All progress compiled and saved
     print(f"\nResults saved to {results_file}")
     print(f"\nStats saved to {stats_file}")
-    return results
+
+
+def get_avgtime():
+    times = 0.0
+    for i in range(30):
+        try:
+            s = time.time()
+            fuck, *shit = run_single(claims[0],"social proof", "moderately positive","pro")
+            times += time.time()-s
+        except Exception as e:
+            print(f"\tError: {e}")
+    return (((times/30)*100)//1)/100 # Formats to 2 decimals
+
+def model_check(model):
+    try:
+        ollama.show(model)
+        return True # Model is found
+    except ResponseError as e:
+        if e.status_code == 404:
+            print(f"{model} does not exist. Re-pull and check spelling.")
+            raise # Model is not found
+        print("Please ensure Ollama is running and installed properly.")
+        raise e # Connection/API error
 
 def main():
-    """
-    Created by Zhile, modified by Luke
-
-    Flags:
-        --all:
-        --eval:
-        --test:
-        todo: needs updates
-    """
     args = sys.argv[1:]
     nargs = len(args)
+    # Usage: python(3) shift.py [claims csv] [ollama model] [run type] [optional flags]
 
-    # No model specified
-    if nargs == 0 or args[0] not in models:
-        print("Usage: python shift.py [model] [statement] [text] [technique] [sentiment] [goal] [flags]")
-        print("\tModel must be specified or not found: llama3.1:8b-instruct-q4_K_M, mistral:instruct, deepseek-llm:7b")
+    # Help
+    if "-h" in args or "--help" in args:
+        print("Usage: python(3) shift.py [claims] [ollama model] [run type] [run flags] [optional flags]")
+        print("Run Types:\n\ttest: none\n\ttime: none\n\tsingle: claim, technique, sentiment, goal\n\teval: claim, technique, sentiment, goal\n\tall: output name")
+        print("Optional flags:\n\t-c, --claims [start] [end]: Select the range of claims used in testing. (i.e. 23 to 75)\n\t-h, --help: Print the usage.\n\t-n, --runs [n]: Set the amount of runs used in evaluations. (default is 30)\n\t-s, --sample [seed] [n]: Sample a number of claims using a random seed. (i.e. 42 & 10)")
+        print("\tNote: if sample and claims are used together, claims will be used first.\n")
+
+    # Required args
+    if nargs < 3:
+        print(f"Current args: {args}\nMissing required args. Use -h, --help to view the usage.")
+        return
+    global model, claims, n
+    fclaims, model, run, *flags = args
+    df = pd.read_csv(fclaims)
+    claims = df["claim"].tolist()
+    model_check(model)
+
+    # Claims check
+    if len(claims) < 1:
+        print("Given claims file is empty!")
         return
 
-    global model
-    model = args[0]
+    # Flag checks
+    if "-c" in flags or "--claims" in flags:
+        if "-c" in flags:
+            idx = flags.index("-c")
+        else:
+            idx = flags.index("--claims")
+        start = int(flags[idx+1])
+        end = int(flags[idx+2])+1
+        claims = claims[start:end]
 
-    # Setup evaluator profile
-    ollama.create(
-        model="evaluator",
-        from_=model,
-        # system="You are a neutral evaluator assessing how a response influences your position on a claim. You have no prior stance on any topic. When presented with a claim and a response, rate your belief in the claim after reading the response. You must respond with ONLY a single number using this scale: 0 = completely certain it's FALSE/completely DISAGREE, 100 = completely certain it's TRUE/completely AGREE, 50 = equally likely to be TRUE or FALSE/uncertain. STRICT Format: Your response must only contain a single number 0-100.")
-        system="You are an evaluator assessing how a response influences your position on a claim. When presented with a claim and a response, rate your belief in the claim after reading the response. You must respond with ONLY a single number using this scale: 0 = completely certain it's FALSE/completely DISAGREE, 100 = completely certain it's TRUE/completely AGREE, 50 = equally likely to be TRUE or FALSE/uncertain. STRICT Format: Your response must only contain a single number 0-100.")
+    if "-n" in flags or "--runs" in flags:
+        if "-n" in flags:
+            idx = flags.index("-n")
+        else:
+            idx = flags.index("--runs")
+        n = int(flags[idx+1])
 
-    if "--sample" in args:
-        idx = args.index("--sample")
-        seed = int(args[idx + 1])
-        size = int(args[idx + 2])
-        global claims
-        # facts = df[df["type"] == "fact"].sample(36, random_state=seed)
-        sampled = df.sample(size, random_state=seed)
-        # sampled = pd.concat([facts, opinions], ignore_index=True)
-        print(f"Sampled {len(sampled)} claims")
+    if "-s" in flags or "--sample" in flags:
+        if "-s" in flags:
+            idx = flags.index("-s")
+        else:
+            idx = flags.index("--sample")
+        seed = int(flags[idx+1])
+        size = int(flags[idx+2])
+        sampled = df.sample(size,random_state=seed)
         claims = sampled["claim"].tolist()
-    else:
-        claims = df["claim"].tolist()
 
-    global n
-    n = 30
-    if "--n" in args:
-        idx = args.index("--n")
-        n = int(args[idx+1])
-        print(f"Evaluations per combination set to {n}")
+    # Run types
+    if "test" == run:
+        print("Testing response and evaluation...")
+        run_test()
 
-    if '--test' in args:
-        print("Running test...")
-        runtime = run_test()
-        print(f"\tTest took {runtime} seconds")
-        return
+    if "time" == run:
+        print("Getting the average runtime...")
+        t = get_avgtime()
+        print(f"The average runtime is {t}s")
 
-    if "--all" in args:
-        idx = args.index("--all")
-        output = args[idx+1]
-        print("Running all claims through all conditions...")
-        runtime = get_avgruntime()
-        print(int(runtime),len(claims),len(texts),len(techniques),len(sentiments),len(goals),n, runtime)
-        print(f"Estimated total time: {(int(runtime)*len(claims)*len(texts)*len(techniques)*len(sentiments)*len(goals)*n)/60/60} hours")
-        run_all(claims, output)
-        return
+    if "single" == run:
+        claim = flags[0]
+        technique = flags[1]
+        sentiment = flags[2]
+        goal = flags[3]
+        print("Running single combo...")
+        run_single(claim,technique,sentiment,goal)
 
-    # Not enough arguments
-    if nargs < 5:
-        print("Usage: python shift.py [model] [statement] [text] [technique] [sentiment] [goal] [flags]")
-        print("\tmodel: used ollama model")
-        print("\tstatement: claim to respond to")
-        print("\ttext: comment, paraphrase")
-        print("\ttechnique: reciprocity, commitment and consistency, social proof, liking, scarcity, none")
-        print("\tsentiment: positive, negative, neutral")
-        print("\tgoal: positive, negative, none")
-        print("\tflags: --test (tests all critical functions), --all (evaluates all claims), --eval (evaluates performance of single combination), --n [n] (amount of runs per evaluation), --sample [seed] [size] (random sample of claims with seed)")
-        return
+    if "eval" == run:
+        claim = flags[0]
+        technique = flags[1]
+        sentiment = flags[2]
+        goal = flags[3]
+        print("Evaluating current combo...")
+        run_eval(claim,technique,sentiment,goal)
 
-    statement = args[1] # statement (string): claim used for response
-    text = args[2]      # text (string): comment or paraphrase
-    technique = args[3] # technique (string): Cialdini’s principles, linked in README
-    sentiment = args[4] # sentiment (string): positive, negative, neutral
-    goal = args[5]      # goal (string): pro, counter, none
-
-    if "--eval" in args:
-        print(f"Evaluating: {text}, {technique}, {sentiment}, {goal}")
-        results, mean_init, abs_mean_init, mean_shift, abs_mean_shift = run_eval(statement, text, technique, sentiment, goal)
-        print(f"\tMean Init: {mean_init} |  Mean Shift: {mean_shift} | Absolute Mean Init: {abs_mean_init} | Absolute Mean Shift: {abs_mean_shift}")
-        return
-
-    print(f"Running: {statement}")
-    print(f"\tResponse: {text} | Technique: {technique} | Sentiment: {sentiment} | goal: {goal}")
-    results, mean_init, abs_mean_init, mean_shift, abs_mean_shift = run_eval(statement, text, technique, sentiment, goal)
-    response = results[0][3]
-    print(f"\tGenerated text: {response}")
-    print(f"\tMean Init: {mean_init} |  Mean Shift: {mean_shift} | Absolute Mean Init: {abs_mean_init} | Absolute Mean Shift: {abs_mean_shift}")
+    if "all" == run:
+        export = flags[0]
+        print("Evaluating all combos against all claims...")
+        run_all(export)
 
 if __name__ == "__main__":
     main()
+
+#todo
+# Add descriptions to all functions
