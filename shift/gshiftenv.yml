@@ -1,0 +1,10 @@
+name: bs-gshift
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.13
+  - ollama
+  - pandas
+  - pydantic
+prefix: /Users/lukely/miniconda3/envs/bs-gshift
