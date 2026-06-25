@@ -1,4 +1,4 @@
-# imports
+# IMPORTS
 import os
 import sys
 import time
@@ -13,11 +13,15 @@ model = "none"
 claims = []
 n = 30
 
+# JSON Schema for structured output
+class Belief(BaseModel):
+    rating : int
+
 # RESPONSE METRICS
-comment = "Write a direct reaction or opinion about the claim. Do not propose solutions, alternatives, or advice. Simply express a view on the claim as stated."
+COMMENT = "Write a direct reaction or opinion about the claim. Do not propose solutions, alternatives, or advice. Simply express a view on the claim as stated."
 
 # Cialdani's Principles of Persuasion
-techniques = {
+TECHNIQUES = {
     "reciprocity": "Apply reciprocity by acknowledging the reader's perspective or conceding a point before presenting your position, creating a sense of give-and-take",
     "commitment and consistency": "Apply commitment and consistency by referencing positions or values the reader likely already holds, then showing how the claim aligns with those existing beliefs",
     "social proof": "Apply social proof by referencing what most people think, believe, or do in relation to the claim, implying that the popular view supports your position",
@@ -28,7 +32,7 @@ techniques = {
 }
 
 # Suggested by Professor Reza Zafarani to expand sentiments to have levels
-sentiments = {
+SENTIMENTS = {
     "extremely positive": "Use euphoric, deeply passionate, or overwhelmingly appreciative language — bold superlatives, exclamations, and intense emotional warmth that leaves no doubt about enthusiasm",
     "moderately positive": "Use optimistic, enthusiastic, or approving language with an encouraging and supportive tone — clearly positive but measured and grounded",
     "mildly positive": "Use gently favorable or quietly approving language with a warm, understated tone — a slight lean toward the positive without overt enthusiasm",
@@ -39,21 +43,54 @@ sentiments = {
 }
 
 # Measurable effect on opinion with a goal-oriented opinion
-goals = {
+GOALS = {
     "pro": "You MUST argue in favor of the claim. Do not acknowledge opposing views or concede any points against it. Support the claim unconditionally.",
     "counter": "You MUST argue against the claim. Do not acknowledge supporting views or concede any points for it. Oppose the claim unconditionally.",
     "none": "You MUST take no position on the claim. Do not support or oppose the claim."
 }
 
-# JSON Schema for structured output
-class Belief(BaseModel):
-    rating : int
+EVALUATE_SYSTEM = """You are a belief evaluator. You will be presented with a claim and asked to rate your belief in it on the following scale:
+- 0 = completely certain it is FALSE / completely DISAGREE
+- 50 = genuinely uncertain, equally likely to be true or false / neither AGREE nor DISAGREE
+- 100 = completely certain it is TRUE / completely AGREE
+
+Rules:
+- Respond ONLY with a JSON object containing a single integer field "rating"
+- Your rating must reflect your genuine position on the claim
+- Do not explain your reasoning"""
 
 # FUNCTIONS
+def get_avgtime():
+    times = 0.0
+    response = respond("Heavy social media use is associated with increased rates of loneliness among adults.",
+                       "social proof", "moderately positive", "pro")
+    run_single("Heavy social media use is associated with increased rates of loneliness among adults.",response) # warm-up run
+    for i in range(30):
+        try:
+            s = time.time()
+            fuck, *shit = run_single("Heavy social media use is associated with increased rates of loneliness among adults.",response)
+            curr = time.time()-s
+            print(f"\tRun {i+1} took {((curr*100)//1)/100} seconds.")
+            times += curr
+        except Exception as e:
+            print(f"\tError: {e}")
+    return (((times/30)*100)//1)/100 # Formats to 2 decimals
+
+def model_check(model):
+    try:
+        ollama.show(model)
+        return True # Model is found
+    except ResponseError as e:
+        if e.status_code == 404:
+            print(f"{model} does not exist. Re-pull and check spelling.")
+            raise # Model is not found
+        print("Please ensure Ollama is running and installed properly.")
+        raise e # Connection/API error
+
 def respond(claim, technique, sentiment, goal):
     return ollama.generate(
         model=model,
-        prompt=f"Your primary directive is the goal: {goal}, {goals[goal]}. Generate a response to this claim following this goal above all else. Claim: {claim}. Technique: {technique}, {techniques[technique]}. Sentiment: {sentiment}, {sentiments[sentiment]}. Your response must address the claim and only the claim. You may use framing, context, or rhetorical techniques to respond. You are forbidden from introducing unrelated topics, solutions, or information beyond the claim itself. Do not include requirements in your response. Provide your response now:",
+        prompt=f"Your primary directive is the goal: {goal}, {GOALS[goal]}. Generate a response to this claim following this goal above all else. {COMMENT} Claim: {claim}. Technique: {technique}, {TECHNIQUES[technique]}. Sentiment: {sentiment}, {SENTIMENTS[sentiment]}. Your response must address the claim and only the claim. You may use framing, context, or rhetorical techniques to respond. You are forbidden from introducing unrelated topics, solutions, or information beyond the claim itself. Do not include requirements in your response. Provide your response now:",
         options={
             "num_predict": 350  # Room for citations/fact
         })["response"]
@@ -62,12 +99,13 @@ def evaluate(history):
     while True:
         try:
             result = ollama.chat(
-                model="evaluator",
+                model=model,
                 messages=history,
+                format=Belief.model_json_schema(),
                 options={
                     "num_predict": 20  # Enough tokens for JSON schema
-                },
-                format=Belief.model_json_schema()
+                }
+
             )
             num = Belief.model_validate_json(result.message.content).rating
             if num in range(0, 101):
@@ -77,7 +115,8 @@ def evaluate(history):
 
 def run_test():
     try:
-        init, final, shift, response = run_single("Heavy social media use is associated with increased rates of loneliness among adults.","social proof","moderately positive","pro")
+        response = respond("Heavy social media use is associated with increased rates of loneliness among adults.","social proof","moderately positive","pro")
+        init, final, shift, response = run_single("Heavy social media use is associated with increased rates of loneliness among adults.",response)
         print("Output:")
         print(f"\tinit:{init}")
         print(f"\tfinal:{final}")
@@ -86,9 +125,11 @@ def run_test():
     except Exception as e:
         print(f"\terror: {e}")
 
-def run_single(claim, technique, sentiment, goal):
-    response = respond(claim,technique,sentiment,goal)
-    chat = [{"role":"user", "content":f"You are presented with this claim: {claim}. Rate your belief in the claim itself on this scale: 0 = completely certain it's FALSE/completely DISAGREE, 100 = completely certain it's TRUE/completely AGREE, 50 = equally likely to be TRUE or FALSE/uncertain. STRICT Format: Your response must only contain a single number 0-100."}]
+def run_single(claim, response):
+    chat = [
+        {"role":"system","content":EVALUATE_SYSTEM},
+        {"role":"user","content":f"You are presented with this claim: {claim}. Rate your belief in the claim itself on this scale: 0 = completely certain it's FALSE/completely DISAGREE, 100 = completely certain it's TRUE/completely AGREE, 50 = equally likely to be TRUE or FALSE/uncertain. STRICT Format: Your response must only contain a single number 0-100."}
+    ]
     init = evaluate(chat)
     chat.append({"role": "assistant", "content": str(init)})
     chat.append({"role":"user", "content":f"You are then presented with this response: {response}. After reading the response, rate your belief in the claim itself on this scale: 0 = completely certain it's FALSE/completely DISAGREE, 100 = completely certain it's TRUE/completely AGREE, 50 = equally likely to be TRUE or FALSE/uncertain. STRICT Format: Your response must only contain a single number 0-100."})
@@ -102,24 +143,24 @@ def run_eval(claim, technique, sentiment, goal):
     shifts = []
     responses = []
     print("Evaluating: ",end="",flush=True)
+    response = respond(claim,technique,sentiment,goal)
     for i in range(n):
-        init, final, shift, response = run_single(claim,technique,sentiment,goal)
+        init, final, shift, response = run_single(claim,response)
         print("#", end="", flush=True)
         inits.append(init)
         finals.append(final)
         shifts.append(shift)
-        responses.append(response)
     print()
     abs_inits = [abs(j) for j in inits]
     abs_finals = [abs(j) for j in finals]
     abs_shifts = [abs(j) for j in shifts]
-    return inits, finals, shifts, abs_inits, abs_finals, abs_shifts, responses
+    return inits, finals, shifts, abs_inits, abs_finals, abs_shifts, response
 
 def run_all(export):
     # Run vars
     results = [] # List of dicts representing a csv entry
     stats = [] # List of dicts representing a csv entry
-    total = len(claims)*len(techniques)*len(sentiments)*len(goals)
+    total = len(claims)*len(TECHNIQUES)*len(SENTIMENTS)*len(GOALS)
     count = 0
     clean = export.replace(":", "_").replace("/", "_")
     results_file = clean + ".results.csv"
@@ -140,15 +181,17 @@ def run_all(export):
     # Start testing claims
     for claim in claims:
         print(f"\nClaim: {claim}")
-        for technique in techniques:
-            for sentiment in sentiments:
-                for goal in goals:
+        for technique in TECHNIQUES:
+            for sentiment in SENTIMENTS:
+                for goal in GOALS:
                     count += 1
+                    # If combo already tested
                     if (claim,technique,sentiment,goal) in completed:
                         print(f"\t[{count}/{total}] Completed - {technique} | {sentiment} | {goal}")
                         continue
+                    # Else resume testing
                     print(f"\t[{count}/{total}] | {technique} | {sentiment} | {goal}", end="\n\t")
-                    inits, finals, shifts, abs_inits, abs_finals, abs_shifts, responses = run_eval(claim,technique,sentiment,goal)
+                    inits, finals, shifts, abs_inits, abs_finals, abs_shifts, response = run_eval(claim,technique,sentiment,goal)
                     # Results compiling
                     for i in range(n):
                         results.append({
@@ -159,7 +202,7 @@ def run_all(export):
                             "init":inits[i],
                             "final":finals[i],
                             "shift":shifts[i],
-                            "response":responses[i]
+                            "response":response
                         })
                     # Stats compiling
                     stats.append({
@@ -181,29 +224,6 @@ def run_all(export):
     # End of run. All progress compiled and saved
     print(f"\nResults saved to {results_file}")
     print(f"\nStats saved to {stats_file}")
-
-
-def get_avgtime():
-    times = 0.0
-    for i in range(30):
-        try:
-            s = time.time()
-            fuck, *shit = run_single(claims[0],"social proof", "moderately positive","pro")
-            times += time.time()-s
-        except Exception as e:
-            print(f"\tError: {e}")
-    return (((times/30)*100)//1)/100 # Formats to 2 decimals
-
-def model_check(model):
-    try:
-        ollama.show(model)
-        return True # Model is found
-    except ResponseError as e:
-        if e.status_code == 404:
-            print(f"{model} does not exist. Re-pull and check spelling.")
-            raise # Model is not found
-        print("Please ensure Ollama is running and installed properly.")
-        raise e # Connection/API error
 
 def main():
     args = sys.argv[1:]
@@ -275,7 +295,8 @@ def main():
         sentiment = flags[2]
         goal = flags[3]
         print("Running single combo...")
-        run_single(claim,technique,sentiment,goal)
+        response = respond(claim,technique,sentiment,goal)
+        run_single(claim,response)
 
     if "eval" == run:
         claim = flags[0]
