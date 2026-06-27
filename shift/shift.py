@@ -70,11 +70,11 @@ def get_avgtime():
             s = time.time()
             fuck, *shit = run_single("Heavy social media use is associated with increased rates of loneliness among adults.",response)
             curr = time.time()-s
-            print(f"\tRun {i+1} took {((curr*100)//1)/100} seconds.")
+            print(f"\tRun {i+1} took {two_decimal(curr)} seconds.")
             times += curr
         except Exception as e:
             print(f"\tError: {e}")
-    return (((times/30)*100)//1)/100 # Formats to 2 decimals
+    return two_decimal(times/30) # Formats to 2 decimals
 
 def model_check(model):
     try:
@@ -86,6 +86,9 @@ def model_check(model):
             raise # Model is not found
         print("Please ensure Ollama is running and installed properly.")
         raise e # Connection/API error
+
+def two_decimal(num):
+    return ((num*100)//1)/100
 
 def respond(claim, technique, sentiment, goal):
     return ollama.generate(
@@ -308,6 +311,9 @@ def main():
 
     if "all" == run:
         export = flags[0]
+        runtime = get_avgtime()
+        totaltime = (int(runtime)*len(claims)*len(TECHNIQUES)*len(SENTIMENTS)*len(GOALS)*n)/60/60
+        print(f"Estimated total time: {two_decimal(totaltime)} hours.")
         print("Evaluating all combos against all claims...")
         run_all(export)
 
