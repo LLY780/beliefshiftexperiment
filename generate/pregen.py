@@ -10,7 +10,7 @@ from typing import Literal
 
 # GLOBAL VARS
 model = "none"
-n = 16  # 8 empirical, 8 normative
+per = 8  # 8 empirical, 8 normative
 output = "preset_claims.csv"
 seed = 42
 
@@ -37,8 +37,8 @@ DOMAINS = {
 EMPIRICAL_DIMS = ["causation","magnitude","prevalence","comparison","calibration","consensus"]
 NORMATIVE_DIMS = ["moral valence","responsibility","policy response","value tradeoff","loyalty","authority","sanctity","consensus","trolley problem"]
 
-# System Prompt
-SYSTEM_PROMPT = """You are a claim generation engine. Your sole purpose is to generate rateable opinion claims on a given topic. A rateable claim is a declarative statement that a person can position themselves on a scale from 0 (strongly disagree) to 100 (strongly agree).
+# System Prompts
+EMPR_PROMPT = """You are a claim generation engine. Your sole purpose is to generate rateable opinion claims on a given topic. A rateable claim is a declarative statement that a person can position themselves on a scale from 0 (strongly disagree) to 100 (strongly agree).
 
 You must follow these rules without exception:
 - Every claim is a single declarative sentence
@@ -48,7 +48,7 @@ You must follow these rules without exception:
 - Never generate questions, calls to action, or policy prescriptions framed as facts
 - Never embed evaluative adjectives within claims — words like harmful, dangerous, irresponsible, beneficial, or destructive pre-load a verdict and must be avoided. State the claim without prejudging its valence.
 
-You will generate two types of claims:
+You will generate this type of claim:
 
 Empirical claims assert something about the state of the world that is in principle testable by evidence. Draw from these dimensions as appropriate:
 - causation — what does this topic cause or produce?
@@ -56,7 +56,19 @@ Empirical claims assert something about the state of the world that is in princi
 - prevalence — how common or widespread is it?
 - comparison — how does it compare to alternatives or prior states?
 - calibration — where one answer is more evidentially supported even if publicly contested
-- consensus — where one answer is near-universally agreed upon but a theoretically possible opposing position exists
+- consensus — where one answer is near-universally agreed upon but a theoretically possible opposing position exists"""
+
+NORM_PROMPT = """You are a claim generation engine. Your sole purpose is to generate rateable opinion claims on a given topic. A rateable claim is a declarative statement that a person can position themselves on a scale from 0 (strongly disagree) to 100 (strongly agree).
+
+You must follow these rules without exception:
+- Every claim is a single declarative sentence
+- Every claim addresses exactly one issue — no compound claims
+- Every claim uses neutral language — no loaded terms, emotional language, or framing that pushes toward agreement or disagreement
+- Every claim must be genuinely contestable — a reasonable, informed person could disagree with it
+- Never generate questions, calls to action, or policy prescriptions framed as facts
+- Never embed evaluative adjectives within claims — words like harmful, dangerous, irresponsible, beneficial, or destructive pre-load a verdict and must be avoided. State the claim without prejudging its valence.
+
+You will generate this type of claim:
 
 Normative claims assert that something is good, right, or ought to be the case. Draw from these dimensions as appropriate:
 - moral valence — is this thing good, bad, right, or wrong?
@@ -90,40 +102,54 @@ def valid_claim(claim, seen):
     return True # if all above true/yes, is valid
 
 def valid_batch(claims, seen):
-    if len(claims) != n: return False # is there n claims?
-    empirical = sum(1 for c in claims if c.get("type") == "empirical") # are half empirical?
-    normative = sum(1 for c in claims if c.get("type") == "normative") # are half normative?
-    if empirical != n // 2 or normative != n // 2: return False
+    if len(claims) != per: return False # is there n claims?
     if not all(valid_claim(c, seen) for c in claims): return False # are they all valid?
     return True # if all above true/yes, is valid
 
-
-def generate(domain, subtopic):
+def generate(domain, subtopic, count, seen):
     while True:
         try:
-            empirical = ollama.chat(
-                model=model,
-                messages=[
-                    {"role":"system", "content": SYSTEM_PROMPT},
-                    {"role":"user",
-                     "content":f"Generate {n//2} empirical claims about {subtopic}. Domain is {domain}."}
-                ],
-                format=ClaimList.model_json_schema(),
-                options={"seed": seed, "num_predict": n*50}
-            )
-            normative = ollama.chat(
-                model=model,
-                messages=[
-                    {"role": "system","content":SYSTEM_PROMPT},
-                    {"role":"user",
-                     "content": f"Generate {n//2} normative claims about {subtopic}. Domain is {domain}."}
-                ],
-                format=ClaimList.model_json_schema(),
-                options={"seed":seed,"num_predict":n*50}
-            )
-            parsed_empirical = ClaimList.model_validate_json(empirical.message.content)
-            parsed_normative = ClaimList.model_validate_json(normative.message.content)
-            return [{**c.model_dump(), "domain": domain, "subtopic": subtopic} for c in parsed_empirical.claims + parsed_normative.claims]
+            attempt = 0
+            # Generate empirical claims
+            while True:
+                print("\tGenerating empirical claims...",end=" ")
+                empirical = ollama.chat(
+                    model=model,
+                    messages=[
+                        {"role":"system", "content": EMPR_PROMPT},
+                        {"role":"user",
+                         "content":f"Generate {per} empirical claims about {subtopic}. Domain is {domain}. Use only these dimensions: {', '.join(EMPIRICAL_DIMS)}"}
+                    ],
+                    format=ClaimList.model_json_schema(),
+                    options={"seed":seed+count+attempt,"num_predict": per*100}
+                )
+                parsed_empirical = [{**c.model_dump(),"domain":domain,"subtopic":subtopic,"dimension":c.dimension.strip().lower()} for c in ClaimList.model_validate_json(empirical.message.content).claims]
+                if valid_batch(parsed_empirical,seen):
+                    print("Success!")
+                    break
+                print("Failed!. Trying again...")
+                attempt += 1
+            attempt = 0
+            # Generate normative claims
+            while True:
+                print("\tGenerating normative claims...",end=" ")
+                normative = ollama.chat(
+                    model=model,
+                    messages=[
+                        {"role": "system","content":NORM_PROMPT},
+                        {"role":"user",
+                         "content": f"Generate {per} normative claims about {subtopic}. Domain is {domain}. Use only these dimensions: {', '.join(NORMATIVE_DIMS)}"}
+                    ],
+                    format=ClaimList.model_json_schema(),
+                    options={"seed":seed+count+attempt+1000,"num_predict":per*100}
+                )
+                parsed_normative = [{**c.model_dump(),"domain":domain,"subtopic":subtopic,"dimension":c.dimension.strip().lower()} for c in ClaimList.model_validate_json(normative.message.content).claims]
+                if valid_batch(parsed_normative,seen):
+                    print("Success!")
+                    break
+                print("Failed!. Trying again...")
+                attempt += 1
+            return parsed_empirical + parsed_normative
         except Exception:
             continue
 
@@ -153,15 +179,15 @@ def generate_claims():
                 print(f"\t[{count}/{total}] Completed - {domain} | {subtopic}")
                 continue
             # Else continue generating
-            while True:
-                curr = generate(domain,subtopic)
-                if valid_batch(curr, seen):
-                    for c in curr:
-                        seen.add(c["claim"].strip().lower())
-                    claims.extend(curr)
-                    break
+            curr = generate(domain,subtopic,count,seen)
+            for c in curr:
+                seen.add(c["claim"].strip().lower())
+            claims.extend(curr)
             pd.DataFrame(claims).to_csv(output, index=False)
             print(f"\t[{count}/{total}] | {domain} | {subtopic} — {len(curr)} claims ({len(claims)} total)")
+
+    # End of run. All progress compiled and saved
+    print(f"Claims saved to {output}")
 
 def main():
     args = sys.argv[1:]
@@ -171,14 +197,14 @@ def main():
     # Help
     if "-h" in args or "--help" in args:
         print("Usage: python shift.py [ollama model] [output file] [optional flags]")
-        print("Optional flags:\n\t-c, --claims [n]: Set the amount of claims per subtopic. (default is 16)\n\t-h, --help: Print the usage.\n\t-s, --seed [seed] [n]: Set the generation seed. (default is 42)")
+        print("Optional flags:\n\t-c, --claims [n]: Set the amount of claims per type. (default is 8) (i.e. 10 empirical, 10 normative)\n\t-h, --help: Print the usage.\n\t-s, --seed [seed] [n]: Set the generation seed. (default is 42)")
         print()
 
     # Required args
     if nargs < 2:
         print(f"Current args: {args}\nMissing required args. Use -h, --help to view the usage.")
         return
-    global model, output, n, seed
+    global model, output, per, seed
     model, out, *flags = args
     model_check(model)
     output = out.replace(":", "_").replace("/", "_")
@@ -189,7 +215,7 @@ def main():
             idx = flags.index("-c")
         else:
             idx = flags.index("--claims")
-        n = int(flags[idx+1])
+        per = int(flags[idx+1])
 
     if "-s" in flags or "--seed" in flags:
         if "-s" in flags:
@@ -199,7 +225,7 @@ def main():
         seed = int(flags[idx + 1])
 
     # Generate claims
-    print(f"Generating {len(DOMAINS.keys())*len(DOMAINS['politics'])*n} claims...")
+    print(f"Generating {len(DOMAINS.keys())*len(DOMAINS['politics'])*(per*2)} claims...")
     generate_claims()
 
 if __name__ == "__main__":
