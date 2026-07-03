@@ -192,7 +192,7 @@ def generate_claims():
 def main():
     args = sys.argv[1:]
     nargs = len(args)
-    # Usage: python(3) shift.py [ollama model] [output file] [optional flags]
+    # Usage: python shift.py [ollama model] [output file] [optional flags]
 
     # Help
     if "-h" in args or "--help" in args:
