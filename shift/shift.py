@@ -4,8 +4,8 @@ import sys
 import time
 
 import ollama
-from ollama import ResponseError
 import pandas as pd
+from ollama import ResponseError
 from pydantic import BaseModel
 
 # GLOBAL VARS
@@ -209,16 +209,17 @@ def run_all(export):
                         })
                     # Stats compiling
                     stats.append({
+                        # Consider phasing out stats csv
                         "claim":claim,
                         "technique":technique,
                         "sentiment":sentiment,
                         "goal":goal,
-                        "mean_init":sum(inits)/n,
-                        "mean_final":sum(finals)/n,
-                        "mean_shift":sum(shifts)/n,
-                        "abs_mean_init":sum(inits)/n,
-                        "abs_mean_final":sum(finals)/n,
-                        "abs_mean_shift":sum(shifts)/n
+                        "m_init":sum(inits)/n,
+                        "m_final":sum(finals)/n,
+                        "m_shift":sum(shifts)/n,
+                        "mabs_init":abs(sum(inits)/n),
+                        "mabs_final":abs(sum(finals)/n),
+                        "mabs_shift":abs(sum(shifts)/n)
                     })
                     # Incremental save after every combination
                     pd.DataFrame(results).to_csv(results_file, index=False)
@@ -231,11 +232,11 @@ def run_all(export):
 def main():
     args = sys.argv[1:]
     nargs = len(args)
-    # Usage: python(3) shift.py [claims csv] [ollama model] [run type] [optional flags]
+    # Usage: python shift.py [claims csv] [ollama model] [run type] [optional flags]
 
     # Help
     if "-h" in args or "--help" in args:
-        print("Usage: python(3) shift.py [claims] [ollama model] [run type] [run flags] [optional flags]")
+        print("Usage: python shift.py [claims] [ollama model] [run type] [run flags] [optional flags]")
         print("Run Types:\n\ttest: none\n\ttime: none\n\tsingle: claim, technique, sentiment, goal\n\teval: claim, technique, sentiment, goal\n\tall: output name")
         print("Optional flags:\n\t-c, --claims [start] [end]: Select the range of claims used in testing. (i.e. 23 to 75)\n\t-h, --help: Print the usage.\n\t-n, --runs [n]: Set the amount of runs used in evaluations. (default is 30)\n\t-s, --sample [seed] [n]: Sample a number of claims using a random seed. (i.e. 42 & 10)")
         print("\tNote: if sample and claims are used together, claims will be used first.\n")
