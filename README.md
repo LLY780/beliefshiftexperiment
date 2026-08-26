@@ -1,7 +1,7 @@
 # Belief Shift Experiment
 An experiment for observing how AI generated responses affect beliefs/opinions
 
-Created by: Luke Ly, Zhile Dai
+Created by: Luke Ly
 
 Supervised by: Professor Reza Zafarani and PhD student Zhaoyang Cao
 
