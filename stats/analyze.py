@@ -1,0 +1,1099 @@
+"""
+Belief Shift Experiment - Statistical Analysis (v3)
+====================================================
+Reads results.csv (one row per trial) plus optional claim metadata
+(preset_claims.csv: claim, domain, subtopic, dimension, type).
+
+This version follows a revised methodology (per advisor notes):
+  1. init/final belief scores are re-centered around 50 (mean-shift +
+     clip to [0,100]) before any analysis, to remove the ceiling effect
+     caused by most claims starting with strong initial agreement.
+  2. Single-variable and pairwise effects are assessed by CONTROLLING
+     for the other manipulated variable(s) - filtering to their baseline
+     level (technique=none, sentiment=neutral, goal=none) - rather than
+     averaging over all their levels. Averaging over all levels mixes
+     together different interaction regimes and can make a variable's
+     marginal effect look backwards (this is what happened with
+     `sentiment` before this revision).
+  3. Significance is assessed with a two-sample t-test comparing each
+     level's shift distribution against that variable's own baseline
+     level, within the controlled subset - not a regression model.
+     Per advisor instruction, no coefficients/regression are used.
+
+Usage:
+  python analyze.py [results.csv] [preset_claims.csv]
+  python analyze.py   # auto-detects *results*.csv and preset_claims.csv
+
+Dependencies: pip install pandas numpy scipy matplotlib
+"""
+
+import os
+import sys
+import glob
+import warnings
+from itertools import combinations
+
+import numpy as np
+import pandas as pd
+from scipy import stats as spstats
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+warnings.filterwarnings("ignore")
+
+FIG_DIR = "figures"
+ALPHA = 0.05
+MIN_TRIALS_FOR_DIMENSION = 50  # dimension is free-chosen by the LLM, so it
+                                # can be unbalanced; technique/sentiment/goal/
+                                # claim_type/domain are fully crossed and need
+                                # no such threshold.
+
+MANIPULATED_VARS = ["technique", "sentiment", "goal"]
+
+# Fixed display order for sentiment whenever it appears on a figure axis -
+# most positive to most negative, not sorted by shift value.
+SENTIMENT_ORDER = ["extremely positive", "moderately positive", "mildly positive",
+                    "neutral", "mildly negative", "moderately negative", "extremely negative"]
+
+# The "do nothing" condition for each manipulated variable - used to control
+# for the other two variables when assessing one variable's own effect.
+BASELINE_LEVELS = {"technique": "none", "sentiment": "neutral", "goal": "none"}
+
+
+def ordered_levels(var, present_levels, by_value=None, ascending=False):
+    """Returns levels in a sensible display order: sentiment always follows
+    SENTIMENT_ORDER (extremely positive -> neutral -> extremely negative),
+    everything else sorts by by_value (a Series of level -> value) if
+    given, else alphabetically."""
+    present = set(present_levels)
+    if var == "sentiment":
+        return [lvl for lvl in SENTIMENT_ORDER if lvl in present]
+    if by_value is not None:
+        return by_value.sort_values(ascending=ascending).index.tolist()
+    return sorted(present)
+
+
+# ============================================================
+# DATA LOADING
+# ============================================================
+
+def normalize_to_midpoint(df, target=50):
+    """Shifts init and final by the same amount so the mean of init lands
+    on `target`, then clips both to [0, 100]. Fixes the ceiling effect from
+    most claims starting with init clustered around 80-90 - after this,
+    there's real headroom to shift in either direction, not just down."""
+    diff = df["init"].mean() - target
+    df["init"] = (df["init"] - diff).clip(0, 100)
+    df["final"] = (df["final"] - diff).clip(0, 100)
+    return df, diff
+
+
+def load_data(results_path, claims_path=None):
+    df = pd.read_csv(results_path)
+
+    required = {"claim", "technique", "sentiment", "goal", "init", "final"}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"results.csv is missing required columns: {missing}")
+
+    # Always derive shift from final - init directly, rather than trusting
+    # an upstream column, and flag if it disagrees with what's on disk.
+    recomputed_shift = df["final"] - df["init"]
+    if "shift" in df.columns:
+        mismatch = (df["shift"] - recomputed_shift).abs() > 1e-6
+        if mismatch.any():
+            print(f"Warning: {mismatch.sum()} row(s) had shift != final - init. Using recomputed values.")
+    df["shift"] = recomputed_shift
+
+    recomputed_abs_shift = df["shift"].abs()
+    if "abs_shift" in df.columns:
+        abs_mismatch = (df["abs_shift"] - recomputed_abs_shift).abs() > 1e-6
+        if abs_mismatch.any():
+            print(f"Warning: {abs_mismatch.sum()} row(s) had abs_shift != |shift|. Using recomputed values.")
+    df["abs_shift"] = recomputed_abs_shift
+
+    # Keep raw (un-normalized) copies for reference before overwriting
+    df["init_raw"] = df["init"]
+    df["final_raw"] = df["final"]
+    df["shift_raw"] = df["shift"]
+
+    # Re-center init/final around 50 (see normalize_to_midpoint docstring),
+    # then recompute shift/abs_shift from the normalized values - these
+    # become the working columns used throughout the rest of the analysis.
+    df, norm_diff = normalize_to_midpoint(df)
+    df["shift"] = df["final"] - df["init"]
+    df["abs_shift"] = df["shift"].abs()
+    print(f"Normalization: shifted init/final by {-norm_diff:+.2f} (mean init was "
+          f"{norm_diff + 50:.1f}, now centered near 50), then clipped to [0, 100].")
+
+    # Locate and merge claim metadata (domain, subtopic, dimension, type)
+    if claims_path is None:
+        for cand in ["preset_claims.csv", "claims.csv"]:
+            if os.path.exists(cand):
+                claims_path = cand
+                break
+
+    if claims_path and os.path.exists(claims_path):
+        meta = pd.read_csv(claims_path)
+        keep_cols = [c for c in ["claim", "domain", "subtopic", "dimension", "type"] if c in meta.columns]
+        meta = meta[keep_cols].drop_duplicates(subset="claim")
+        df = df.merge(meta, on="claim", how="left")
+        if "type" in df.columns:
+            df = df.rename(columns={"type": "claim_type"})
+    else:
+        print("Warning: no claims metadata file found (expected preset_claims.csv). "
+              "domain/dimension/claim_type will be unavailable.")
+
+    for col in ["domain", "dimension", "claim_type"]:
+        if col not in df.columns:
+            df[col] = "unknown"
+
+    return df
+
+
+# ============================================================
+# ICC DIAGNOSTIC (how much of the variance is "which claim it is")
+# ============================================================
+
+def compute_icc(df, value_col="shift", group_col="claim"):
+    """One-way ANOVA variance decomposition (Shrout & Fleiss, 1979).
+    Independent of any regression model - just claim-level vs trial-level
+    variance."""
+    grouped = df.groupby(group_col)[value_col]
+    grand_mean = df[value_col].mean()
+    n_total = len(df)
+    k = df[group_col].nunique()
+
+    group_means = grouped.mean()
+    group_sizes = grouped.size()
+
+    ss_between = (group_sizes * (group_means - grand_mean) ** 2).sum()
+    df_between = k - 1
+    ms_between = ss_between / df_between if df_between > 0 else np.nan
+
+    ss_within = grouped.apply(lambda g: ((g - g.mean()) ** 2).sum()).sum()
+    df_within = n_total - k
+    ms_within = ss_within / df_within if df_within > 0 else np.nan
+
+    n_bar = group_sizes.mean()
+    icc = (ms_between - ms_within) / (ms_between + (n_bar - 1) * ms_within)
+    icc = max(0.0, icc)
+
+    return {"icc": icc, "ms_between": ms_between, "ms_within": ms_within,
+            "n_claims": k, "avg_trials_per_claim": n_bar}
+
+
+# ============================================================
+# CENSORING CHECK (is the 0-100 scale boundary being hit hard enough
+# to bias a mean estimate?)
+# ============================================================
+
+def compute_censoring_report(df, group_cols=None, boundary=(0, 100), tol=1e-6):
+    """Fraction of trials landing exactly at the scale boundary (0 or 100)."""
+    d = df.copy()
+    d["_at_floor"] = (d["final"] - boundary[0]).abs() <= tol
+    d["_at_ceiling"] = (d["final"] - boundary[1]).abs() <= tol
+
+    if group_cols:
+        agg = d.groupby(group_cols).agg(
+            pct_at_floor=("_at_floor", "mean"),
+            pct_at_ceiling=("_at_ceiling", "mean"),
+            n=("final", "count"),
+        ).reset_index()
+        agg["pct_at_floor"] *= 100
+        agg["pct_at_ceiling"] *= 100
+        agg["pct_at_boundary"] = agg["pct_at_floor"] + agg["pct_at_ceiling"]
+        return agg
+    else:
+        return pd.DataFrame([{
+            "pct_at_floor": d["_at_floor"].mean() * 100,
+            "pct_at_ceiling": d["_at_ceiling"].mean() * 100,
+            "pct_at_boundary": (d["_at_floor"].mean() + d["_at_ceiling"].mean()) * 100,
+            "n": len(d),
+        }])
+
+
+def print_censoring_report(df, warn_threshold=5.0):
+    print("\n--- Overall ---")
+    overall = compute_censoring_report(df)
+    print(overall.round(2).to_string(index=False))
+
+    if "goal" in df.columns:
+        print("\n--- By goal ---")
+        by_goal = compute_censoring_report(df, ["goal"]).sort_values("pct_at_boundary", ascending=False)
+        print(by_goal.round(2).to_string(index=False))
+
+    print("\n--- Worst combinations (technique x sentiment x goal), top 5 by boundary-hit rate ---")
+    by_combo = compute_censoring_report(df, MANIPULATED_VARS).sort_values("pct_at_boundary", ascending=False)
+    print(by_combo.head(5).round(2).to_string(index=False))
+
+    flagged = by_combo[by_combo["pct_at_boundary"] > warn_threshold]
+    if len(flagged) > 0:
+        print(f"\n  \u26a0 {len(flagged)} combination(s) have >{warn_threshold}% of trials sitting exactly "
+              f"at the scale boundary (0 or 100). Their mean shift may be understated.")
+    else:
+        print(f"\n  No combination exceeds {warn_threshold}% at the scale boundary.")
+    return by_combo
+
+
+# ============================================================
+# LEADERBOARDS (full technique x sentiment x goal combinations - not
+# marginalized over anything, so not subject to the collinearity issue
+# below)
+# ============================================================
+
+def leaderboard(df, group_cols, min_trials=None):
+    agg = df.groupby(group_cols).agg(
+        mean_shift=("shift", "mean"),
+        mean_abs_shift=("abs_shift", "mean"),
+        std_shift=("shift", "std"),
+        n_trials=("shift", "count"),
+    ).reset_index()
+
+    if min_trials:
+        excluded = agg[agg["n_trials"] < min_trials]
+        agg = agg[agg["n_trials"] >= min_trials]
+        if len(excluded) > 0:
+            print(f"  Excluded {len(excluded)} combination(s) with < {min_trials} trials")
+
+    return agg
+
+
+def print_leaderboard_extremes(agg, group_cols, label, n=5):
+    def fmt_combo(row):
+        return ", ".join(f"{c}={row[c]}" for c in group_cols)
+
+    print(f"\n--- {label} ---")
+
+    print(f"\n  Most POSITIVE mean shift (top {n}):")
+    for _, row in agg.sort_values("mean_shift", ascending=False).head(n).iterrows():
+        print(f"    {fmt_combo(row)}: mean_shift={row['mean_shift']:+.2f}, n={row['n_trials']}")
+
+    print(f"\n  Most NEGATIVE mean shift (top {n}):")
+    for _, row in agg.sort_values("mean_shift", ascending=True).head(n).iterrows():
+        print(f"    {fmt_combo(row)}: mean_shift={row['mean_shift']:+.2f}, n={row['n_trials']}")
+
+    print(f"\n  Most EFFECTIVE overall (highest |shift|, top {n}):")
+    for _, row in agg.sort_values("mean_abs_shift", ascending=False).head(n).iterrows():
+        print(f"    {fmt_combo(row)}: mean_abs_shift={row['mean_abs_shift']:.2f} "
+              f"(signed: {row['mean_shift']:+.2f}, std: {row['std_shift']:.2f}), n={row['n_trials']}")
+
+    print(f"\n  LEAST effective (lowest |shift|, top {n}):")
+    for _, row in agg.sort_values("mean_abs_shift", ascending=True).head(n).iterrows():
+        print(f"    {fmt_combo(row)}: mean_abs_shift={row['mean_abs_shift']:.2f} "
+              f"(signed: {row['mean_shift']:+.2f}, std: {row['std_shift']:.2f}), n={row['n_trials']}")
+
+
+# ============================================================
+# CONTROLLED SINGLE-METRIC ANALYSIS (removes collinearity by filtering
+# the OTHER manipulated variables to their baseline level, instead of
+# averaging over all their levels)
+# ============================================================
+
+def filter_baseline_others(df, var):
+    """Keeps only rows where every manipulated variable EXCEPT var is at
+    its baseline level - isolates var's own effect from interactions with
+    the others, rather than averaging over them (which mixes together
+    different interaction regimes and can make an effect look backwards)."""
+    other_vars = [v for v in MANIPULATED_VARS if v != var]
+    mask = pd.Series(True, index=df.index)
+    for ov in other_vars:
+        mask &= df[ov] == BASELINE_LEVELS[ov]
+    return df[mask]
+
+
+def single_metric_ttests(df, var):
+    """For each level of var (within the controlled subset), a two-sample
+    t-test (Welch's, unequal variance) comparing its shift distribution
+    against var's own baseline level's shift distribution."""
+    sub = filter_baseline_others(df, var)
+    baseline_level = BASELINE_LEVELS[var]
+    baseline_vals = sub[sub[var] == baseline_level]["shift"]
+
+    rows = []
+    for level in sorted(sub[var].dropna().unique()):
+        vals = sub[sub[var] == level]["shift"]
+        if level == baseline_level:
+            rows.append({
+                var: level, "mean_shift": vals.mean(), "sem": vals.sem(), "n": len(vals),
+                "t_stat": np.nan, "p": np.nan, "significant": False, "is_baseline": True,
+            })
+            continue
+        t_stat, p = spstats.ttest_ind(vals, baseline_vals, equal_var=False)
+        rows.append({
+            var: level, "mean_shift": vals.mean(), "sem": vals.sem(), "n": len(vals),
+            "t_stat": t_stat, "p": p, "significant": p < ALPHA, "is_baseline": False,
+        })
+    return pd.DataFrame(rows)
+
+
+def print_single_metric_ttests(df, var):
+    table = single_metric_ttests(df, var)
+    other_vars = [v for v in MANIPULATED_VARS if v != var]
+    baseline_str = ", ".join(f"{ov}={BASELINE_LEVELS[ov]}" for ov in other_vars)
+    print(f"\n--- {var} (controlled: {baseline_str}) ---")
+    for _, row in table.sort_values("mean_shift", ascending=False).iterrows():
+        if row["is_baseline"]:
+            tag = "baseline (reference level)"
+            pstr = ""
+        else:
+            tag = "significant" if row["significant"] else "not significant"
+            pstr = f", t={row['t_stat']:.2f}, p={row['p']:.2e}"
+        print(f"  {str(row[var]):25s} mean_shift={row['mean_shift']:+.2f} "
+              f"(SEM={row['sem']:.2f}, n={int(row['n'])}) - {tag}{pstr}")
+    return table
+
+
+def plot_single_metric_bar(df, var, filename):
+    """Bar chart with error bars (SEM) for each level of var, within the
+    controlled subset. Asterisk marks levels significantly different from
+    var's own baseline level (t-test). Kept deliberately plain - one short
+    title, no per-bar "ns" clutter - since only the significant results
+    need calling out."""
+    table = single_metric_ttests(df, var)
+    by_value = table.set_index(var)["mean_shift"]
+    order = ordered_levels(var, table[var].tolist(), by_value=by_value)
+    table = table.set_index(var).loc[order].reset_index()
+
+    n = len(table)
+    fig, ax = plt.subplots(figsize=(max(6, 1.3 * n), 4.5))
+    colors = ["#e74c3c" if v < 0 else "#2ecc71" for v in table["mean_shift"]]
+    ax.bar(table[var].astype(str), table["mean_shift"], yerr=table["sem"], capsize=4,
+           color=colors, edgecolor="black", linewidth=0.5)
+
+    y_span = max(table["mean_shift"].abs().max(), table["sem"].max()) * 1.15 + 1
+    for i, row in table.iterrows():
+        if row["is_baseline"] or not row["significant"]:
+            continue
+        offset = row["sem"] + y_span * 0.05
+        y = row["mean_shift"] + offset if row["mean_shift"] >= 0 else row["mean_shift"] - offset
+        va = "bottom" if row["mean_shift"] >= 0 else "top"
+        ax.text(i, y, "*", ha="center", va=va, fontsize=13, fontweight="bold")
+
+    ax.axhline(0, color="black", linewidth=0.8)
+    ax.set_ylabel("Mean belief shift")
+    ax.set_title(f"Belief Shift by {var}", fontweight="bold", fontsize=13)
+    ax.tick_params(axis="x", labelsize=9)
+    plt.setp(ax.get_xticklabels(), rotation=30, ha="right", rotation_mode="anchor")
+    fig.text(0.5, -0.02, f"Other variables held at baseline  |  * = significant vs. baseline (p<{ALPHA})",
+              ha="center", fontsize=8, style="italic", color="gray")
+    plt.tight_layout()
+    plt.savefig(f"{FIG_DIR}/{filename}", dpi=150, bbox_inches="tight")
+    plt.close()
+
+
+def plot_single_metric_distribution(df, var, filename, n_points=300):
+    """Smooth probability-density curves (KDE) for every level of var,
+    within the controlled subset - shows spread and shape, not just the
+    mean, as smooth lines rather than histogram bars."""
+    sub = filter_baseline_others(df, var)
+    levels = ordered_levels(var, sub[var].dropna().unique().tolist())
+    fig, ax = plt.subplots(figsize=(9, 5.5))
+    cmap = plt.get_cmap("tab10")
+
+    all_vals = sub["shift"].dropna()
+    x_min, x_max = all_vals.min(), all_vals.max()
+    pad = (x_max - x_min) * 0.05 or 1.0
+    x_grid = np.linspace(x_min - pad, x_max + pad, n_points)
+
+    for i, level in enumerate(levels):
+        vals = sub[sub[var] == level]["shift"].dropna()
+        color = cmap(i % 10)
+        if len(vals) >= 2 and vals.std() > 0:
+            density = spstats.gaussian_kde(vals)(x_grid)
+            ax.plot(x_grid, density, color=color, linewidth=2, label=f"{level} (n={len(vals)})")
+            ax.fill_between(x_grid, density, color=color, alpha=0.15)
+        ax.axvline(vals.mean(), color=color, linestyle="--", linewidth=1.2, alpha=0.8)
+
+    ax.axvline(0, color="black", linewidth=0.8)
+    ax.set_xlabel("Belief shift (controlled)")
+    ax.set_ylabel("Density")
+    other_vars = [v for v in MANIPULATED_VARS if v != var]
+    baseline_str = ", ".join(f"{ov}={BASELINE_LEVELS[ov]}" for ov in other_vars)
+    ax.set_title(f"Belief Shift Distribution by {var} (controlled: {baseline_str})", fontweight="bold", fontsize=11)
+    ax.legend(fontsize=8, ncol=2)
+    plt.tight_layout()
+    plt.savefig(f"{FIG_DIR}/{filename}", dpi=150, bbox_inches="tight")
+    plt.close()
+
+
+def plot_pairwise_interaction(df, var1, var2, filename):
+    """Interaction line plot: one line per level of var1, x-axis is var2's
+    levels, points are mean shift with SEM error bars. Replaces the
+    heatmap - parallel lines mean the two variables don't interact much;
+    lines that cross or diverge mean they do. This is the standard way
+    two-way interactions are visualized in factorial designs."""
+    sub, third = filter_baseline_third(df, var1, var2)
+
+    x_by_value = sub.groupby(var2)["shift"].mean()
+    x_order = ordered_levels(var2, sub[var2].dropna().unique().tolist(), by_value=x_by_value)
+    line_by_value = sub.groupby(var1)["shift"].mean()
+    line_levels = ordered_levels(var1, sub[var1].dropna().unique().tolist(), by_value=line_by_value)
+
+    fig, ax = plt.subplots(figsize=(8, 5.5))
+    cmap = plt.get_cmap("tab10")
+    for i, level in enumerate(line_levels):
+        means, sems = [], []
+        for x in x_order:
+            vals = sub[(sub[var1] == level) & (sub[var2] == x)]["shift"]
+            means.append(vals.mean())
+            sems.append(vals.sem())
+        ax.errorbar(x_order, means, yerr=sems, marker="o", capsize=3,
+                    label=str(level), color=cmap(i % 10), linewidth=1.5)
+
+    ax.axhline(0, color="black", linewidth=0.8)
+    ax.set_xlabel(var2)
+    ax.set_ylabel("Mean belief shift")
+    ax.set_title(f"{var1} x {var2} Interaction", fontweight="bold", fontsize=13)
+    ax.legend(title=var1, fontsize=8, ncol=2, loc="best")
+    plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
+    fig.text(0.5, -0.02, f"{third}={BASELINE_LEVELS[third]} held at baseline",
+              ha="center", fontsize=8, style="italic", color="gray")
+    plt.tight_layout()
+    plt.savefig(f"{FIG_DIR}/{filename}", dpi=150, bbox_inches="tight")
+    plt.close()
+
+
+# ============================================================
+# CONTROLLED PAIRWISE ANALYSIS (same idea, one level up: hold the THIRD
+# manipulated variable at baseline instead of averaging over it)
+# ============================================================
+
+def filter_baseline_third(df, var1, var2):
+    third = [v for v in MANIPULATED_VARS if v not in (var1, var2)][0]
+    return df[df[third] == BASELINE_LEVELS[third]], third
+
+
+# ============================================================
+# INTERACTION CONTRAST (is the combined effect of two factors additive,
+# or does it depart from simple addition?)
+# ============================================================
+
+def interaction_contrast(df, var1, level1, var2, level2):
+    """Difference-in-differences test: how much does the observed mean
+    shift for (level1, level2) together depart from what you'd predict by
+    just adding var1's own effect and var2's own effect separately? The
+    third manipulated variable is held at baseline throughout, consistent
+    with the rest of this script's controlled-comparison approach.
+
+    interaction = m11 - (m10 + m01 - m00)
+                = m11 - m10 - m01 + m00
+
+    where m00 = both at baseline, m10 = only var1 active, m01 = only var2
+    active, m11 = both active (observed). interaction ~ 0 means additive;
+    positive means the combination beats simple addition (synergy);
+    negative means it underperforms addition (interference)."""
+    sub, third = filter_baseline_third(df, var1, var2)
+    base1, base2 = BASELINE_LEVELS[var1], BASELINE_LEVELS[var2]
+
+    def cell(v1val, v2val):
+        vals = sub[(sub[var1] == v1val) & (sub[var2] == v2val)]["shift"]
+        return vals.mean(), vals.sem(), len(vals)
+
+    m00, se00, n00 = cell(base1, base2)
+    m10, se10, n10 = cell(level1, base2)
+    m01, se01, n01 = cell(base1, level2)
+    m11, se11, n11 = cell(level1, level2)
+
+    predicted = m10 + m01 - m00
+    interaction = m11 - predicted
+    se_interaction = np.sqrt(se00 ** 2 + se10 ** 2 + se01 ** 2 + se11 ** 2)
+    z = interaction / se_interaction if se_interaction > 0 else np.nan
+    p = 2 * (1 - spstats.norm.cdf(abs(z))) if not np.isnan(z) else np.nan
+
+    return {
+        "var1": var1, "level1": level1, "var2": var2, "level2": level2,
+        "observed": m11, "predicted_additive": predicted, "interaction": interaction,
+        "se": se_interaction, "z": z, "p": p,
+        "significant": bool(p < ALPHA) if not np.isnan(p) else False,
+        "n00": n00, "n10": n10, "n01": n01, "n11": n11,
+    }
+
+
+def all_interaction_contrasts(df, var1, var2):
+    sub, third = filter_baseline_third(df, var1, var2)
+    levels1 = [l for l in sub[var1].dropna().unique() if l != BASELINE_LEVELS[var1]]
+    levels2 = [l for l in sub[var2].dropna().unique() if l != BASELINE_LEVELS[var2]]
+    levels1 = ordered_levels(var1, levels1)
+    levels2 = ordered_levels(var2, levels2)
+
+    rows = [interaction_contrast(df, var1, l1, var2, l2) for l1 in levels1 for l2 in levels2]
+    return pd.DataFrame(rows)
+
+
+def print_interaction_contrasts(df, var1, var2):
+    table = all_interaction_contrasts(df, var1, var2)
+    print(f"\n--- {var1} x {var2} interaction contrasts (observed vs. additive prediction) ---")
+    ordered = table.reindex(table["interaction"].abs().sort_values(ascending=False).index)
+    for _, row in ordered.iterrows():
+        tag = "significant" if row["significant"] else "not significant"
+        print(f"  {var1}={row['level1']:25s} x {var2}={str(row['level2']):20s}  "
+              f"observed={row['observed']:+.2f}  additive_predicted={row['predicted_additive']:+.2f}  "
+              f"interaction={row['interaction']:+.2f}  z={row['z']:.2f}, p={row['p']:.2e} ({tag})")
+    return table
+
+
+def plot_interaction_contrasts(df, var1, var2, filename):
+    """Bar chart of the interaction term (observed - additive prediction)
+    for every level1 x level2 combination. Positive = the combination
+    works BETTER together than adding their solo effects would predict
+    (synergy); negative = WORSE than addition (interference). Outlined
+    bars are statistically significant departures from pure addition."""
+    table = all_interaction_contrasts(df, var1, var2)
+    table["label"] = table["level1"].astype(str) + " x " + table["level2"].astype(str)
+    table = table.sort_values("interaction")
+
+    fig, ax = plt.subplots(figsize=(8, max(4, 0.35 * len(table))))
+    colors = ["#e74c3c" if v < 0 else "#2ecc71" for v in table["interaction"]]
+    edgecolors = ["black" if s else "none" for s in table["significant"]]
+    linewidths = [1.3 if s else 0 for s in table["significant"]]
+    ax.barh(table["label"], table["interaction"], xerr=table["se"], capsize=2,
+            color=colors, edgecolor=edgecolors, linewidth=linewidths)
+    ax.axvline(0, color="black", linewidth=0.8)
+    ax.set_xlabel("Interaction (observed - additive prediction)")
+    ax.set_title(f"{var1} x {var2}: Departure from Additive Combination", fontweight="bold", fontsize=12)
+    ax.tick_params(axis="y", labelsize=8)
+    fig.text(0.5, -0.01,
+              "Outlined bars = significant (p<0.05)  |  positive = combo beats simple addition",
+              ha="center", fontsize=8, style="italic", color="gray")
+    plt.tight_layout()
+    plt.savefig(f"{FIG_DIR}/{filename}", dpi=150, bbox_inches="tight")
+    plt.close()
+
+
+def print_pairwise_metric_table(df, var1, var2):
+    sub, third = filter_baseline_third(df, var1, var2)
+    grouped = sub.groupby([var1, var2])["shift"]
+    pivot = grouped.mean().unstack(var2)
+    sem_pivot = grouped.sem().unstack(var2)
+    print(f"\n--- {var1} x {var2} (controlled: {third}={BASELINE_LEVELS[third]}) ---")
+    print(pivot.round(2).to_string())
+    print("\n  Standard error per cell:")
+    print(sem_pivot.round(2).to_string())
+
+
+# ============================================================
+# RELIABLY MANIPULABLE FACTORS (single-metric levels that are both
+# statistically significant AND move belief in a positive direction)
+# ============================================================
+
+def find_reliable_positive_factors(df):
+    findings = []
+    for var in MANIPULATED_VARS:
+        table = single_metric_ttests(df, var)
+        sig_positive = table[(~table["is_baseline"]) & (table["significant"]) & (table["mean_shift"] > 0)]
+        for _, row in sig_positive.iterrows():
+            findings.append({
+                "variable": var, "level": row[var],
+                "mean_shift": row["mean_shift"], "p": row["p"],
+            })
+    if not findings:
+        return pd.DataFrame(columns=["variable", "level", "mean_shift", "p"])
+    return pd.DataFrame(findings).sort_values("mean_shift", ascending=False).reset_index(drop=True)
+
+
+# ============================================================
+# SUMMARY (quick-glance results + flagged items)
+# ============================================================
+
+def _flag_inconsistent_levels(agg, cancel_ratio=0.3):
+    """Rows where mean_abs_shift is substantial but mean_shift is small
+    relative to it - flip-flop / inconsistent-effect signature."""
+    a = agg.copy()
+    min_abs_shift = a["mean_abs_shift"].median()
+    ratio = a["mean_shift"].abs() / a["mean_abs_shift"].replace(0, np.nan)
+    flagged = a[(a["mean_abs_shift"] >= min_abs_shift) & (ratio < cancel_ratio)]
+    return flagged.sort_values("mean_abs_shift", ascending=False)
+
+
+def _flag_low_n(agg, min_n=20):
+    return agg[agg["n_trials"] < min_n]
+
+
+def _fmt_combo_row(row, group_cols):
+    return ", ".join(f"{c}={row[c]}" for c in group_cols)
+
+
+def _lookup_censoring(row, censoring_by_combo, group_cols, warn_threshold=5.0):
+    if censoring_by_combo is None:
+        return None
+    mask = pd.Series(True, index=censoring_by_combo.index)
+    for c in group_cols:
+        mask &= censoring_by_combo[c] == row[c]
+    match = censoring_by_combo[mask]
+    if len(match) == 0:
+        return None
+    pct = match.iloc[0]["pct_at_boundary"]
+    return pct if pct >= warn_threshold else None
+
+
+def generate_summary(df, icc_result, combo_agg, dim_agg_all, single_metric_tables,
+                      reliable_positive, censoring_by_combo=None):
+    lines = []
+    a = lines.append
+
+    a("# Belief Shift Analysis - Summary\n")
+    a(f"Data: {len(df)} rows, {df['claim'].nunique()} distinct claims\n")
+    a("Note: init/final have been re-centered around 50 (see console log for the exact "
+      "shift applied) to remove the ceiling effect from high initial agreement.\n")
+
+    # --- 1. Claim clustering ---
+    a("## 1. Claim Clustering (ICC)")
+    a(f"- ICC = {icc_result['icc']:.3f} -> {icc_result['icc']*100:.1f}% of variance in shift "
+      f"is attributable to which claim was used ({icc_result['n_claims']} claims, "
+      f"~{icc_result['avg_trials_per_claim']:.1f} trials/claim)")
+    if icc_result["icc"] < 0.05:
+        takeaway = "Claim identity barely matters on its own."
+    elif icc_result["icc"] < 0.15:
+        takeaway = "Claim identity matters a modest amount."
+    else:
+        takeaway = "Claim identity is a substantial source of variation."
+    a(f"- **Takeaway:** {takeaway}\n")
+
+    # --- 2. Best/worst combinations ---
+    a("## 2. Best / Worst Combinations (technique x sentiment x goal, full data)")
+    best = combo_agg.sort_values("mean_shift", ascending=False).iloc[0]
+    worst = combo_agg.sort_values("mean_shift", ascending=True).iloc[0]
+    most_eff = combo_agg.sort_values("mean_abs_shift", ascending=False).iloc[0]
+    least_eff = combo_agg.sort_values("mean_abs_shift", ascending=True).iloc[0]
+    a(f"- Most positive: {_fmt_combo_row(best, MANIPULATED_VARS)} (mean_shift={best['mean_shift']:+.2f}, n={best['n_trials']})")
+    a(f"- Most negative: {_fmt_combo_row(worst, MANIPULATED_VARS)} (mean_shift={worst['mean_shift']:+.2f}, n={worst['n_trials']})")
+    a(f"- Most effective overall: {_fmt_combo_row(most_eff, MANIPULATED_VARS)} "
+      f"(mean_abs_shift={most_eff['mean_abs_shift']:.2f}, std={most_eff['std_shift']:.2f}, n={most_eff['n_trials']})")
+    a(f"- Least effective: {_fmt_combo_row(least_eff, MANIPULATED_VARS)} "
+      f"(mean_abs_shift={least_eff['mean_abs_shift']:.2f}, n={least_eff['n_trials']})")
+
+    for label, row in [("Most positive", best), ("Most negative", worst), ("Most effective", most_eff)]:
+        pct = _lookup_censoring(row, censoring_by_combo, MANIPULATED_VARS)
+        if pct is not None:
+            a(f"- \u26a0 FLAGGED: the \"{label}\" combo above has {pct:.1f}% of trials sitting exactly "
+              f"at the 0/100 scale boundary - its true effect may be understated.")
+
+    inconsistent = _flag_inconsistent_levels(combo_agg)
+    if len(inconsistent) > 0:
+        row = inconsistent.iloc[0]
+        a(f"- \u26a0 FLAGGED: {_fmt_combo_row(row, MANIPULATED_VARS)} has a large mean_abs_shift "
+          f"({row['mean_abs_shift']:.2f}) but small net mean_shift ({row['mean_shift']:+.2f}) - "
+          f"likely inconsistent/flip-flopping rather than reliably one-directional.")
+    a("")
+
+    # --- 3. Single-variable (controlled) highlights ---
+    a("## 3. Single-Variable Highlights (controlled for the other two variables at baseline)")
+    for var, table in single_metric_tables.items():
+        non_baseline = table[~table["is_baseline"]]
+        if len(non_baseline) == 0:
+            continue
+        top = non_baseline.sort_values("mean_shift", ascending=False).iloc[0]
+        bottom = non_baseline.sort_values("mean_shift", ascending=True).iloc[0]
+        a(f"- {var}: most positive vs. baseline = {top[var]} (mean_shift={top['mean_shift']:+.2f}, "
+          f"p={top['p']:.2e}, {'significant' if top['significant'] else 'not significant'}); "
+          f"most negative = {bottom[var]} (mean_shift={bottom['mean_shift']:+.2f}, "
+          f"p={bottom['p']:.2e}, {'significant' if bottom['significant'] else 'not significant'})")
+    a("")
+
+    # --- 4. Reliably manipulable factors ---
+    a("## 4. Reliably Manipulable Factors (significant AND positive, controlled)")
+    if len(reliable_positive) > 0:
+        for _, row in reliable_positive.iterrows():
+            a(f"- {row['variable']}={row['level']}: mean_shift={row['mean_shift']:+.2f}, p={row['p']:.2e}")
+        a(f"- **Takeaway:** these are the specific levels that reliably move belief upward, "
+          f"controlling for the other variables - candidates for practical use if a positive shift is the goal.")
+    else:
+        a("- No single-variable level showed a statistically significant POSITIVE shift vs. its baseline.")
+        a("- **Takeaway:** in this controlled view, no manipulated level reliably increases belief on its own.")
+    a("")
+
+    # --- 5. Low sample size ---
+    a("## 5. Flagged: Low Sample Size")
+    low_n = _flag_low_n(dim_agg_all, min_n=MIN_TRIALS_FOR_DIMENSION)
+    if len(low_n) > 0:
+        a(f"- {len(low_n)} dimension-level row(s) below the {MIN_TRIALS_FOR_DIMENSION}-trial threshold "
+          f"(already excluded from that leaderboard)")
+    else:
+        a("- No dimension-level rows below threshold")
+    a("- **Takeaway:** treat any dimension-level finding with a small n as suggestive, not conclusive.\n")
+
+    # --- 6. Domain ---
+    a("## 6. Domain (descriptive only, not statistically tested)")
+    a("- Only 6 domains exist - not enough groups for a reliable significance test; treat this as descriptive context only.\n")
+
+    return "\n".join(lines)
+
+
+# ============================================================
+# FIGURES (untouched pieces: raw distributions, triple/pairwise/claim_type
+# leaderboards, three-way heatmap, domain summary)
+# ============================================================
+
+def bounded_kde(vals, x_grid, lower=0, upper=100):
+    """Reflection-corrected KDE (Silverman, 1986) so probability mass isn't
+    lost off a hard boundary. Plain gaussian_kde assumes unbounded support,
+    which is wrong for a 0-100 scale: when trials pile up exactly at 0 or
+    100 (confirmed to happen in this data via the censoring check), plain
+    KDE both mis-locates its peak and silently leaks a meaningful chunk of
+    its probability mass past the boundary rather than showing it."""
+    vals = np.asarray(vals)
+    augmented = np.concatenate([vals, 2 * lower - vals, 2 * upper - vals])
+    return spstats.gaussian_kde(augmented)(x_grid) * 3
+
+
+def plot_belief_distributions(df, n_points=300):
+    """Smooth probability-density curves (KDE) for initial vs. final
+    belief, instead of histogram bars, for a cleaner presentation look.
+    Uses bounded_kde since scores are censored at the scale's 0/100
+    edges."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+    x_grid = np.linspace(0, 100, n_points)
+
+    series = [("init", "#3498db", "Initial belief (normalized)"),
+              ("final", "#e67e22", "Final belief (normalized)")]
+    means = {}
+    boundary_pct = {}
+    for col, color, label in series:
+        vals = df[col].dropna()
+        density = bounded_kde(vals, x_grid, lower=0, upper=100)
+        ax.plot(x_grid, density, color=color, linewidth=2, label=label)
+        ax.fill_between(x_grid, density, color=color, alpha=0.25)
+        means[col] = vals.mean()
+        boundary_pct[col] = ((vals <= 1e-6) | (vals >= 100 - 1e-6)).mean() * 100
+
+    y_top = ax.get_ylim()[1]
+    ax.axvline(means["init"], color="#3498db", linestyle="--", linewidth=1.5)
+    ax.axvline(means["final"], color="#e67e22", linestyle="--", linewidth=1.5)
+    ax.text(means["init"], y_top * 0.97, f" M={means['init']:.1f}",
+            color="#3498db", fontsize=9, fontweight="bold", va="top")
+    ax.text(means["final"], y_top * 0.90, f" M={means['final']:.1f}",
+            color="#e67e22", fontsize=9, fontweight="bold", va="top")
+
+    ax.set_xlabel("Belief score (0-100, normalized)")
+    ax.set_ylabel("Density")
+    ax.set_title("Distribution of Initial vs. Final Belief Scores (normalized)", fontweight="bold")
+    ax.legend()
+    fig.text(0.5, -0.02,
+             f"At scale boundary (exactly 0 or 100): {boundary_pct['init']:.1f}% of initial, "
+             f"{boundary_pct['final']:.1f}% of final scores",
+             ha="center", fontsize=8, style="italic", color="gray")
+    plt.tight_layout()
+    plt.savefig(f"{FIG_DIR}/belief_distributions.png", dpi=150, bbox_inches="tight")
+    plt.close()
+
+
+def plot_leaderboard_bars(agg, group_cols, title, filename, top_n=10):
+    agg = agg.copy()
+    agg["label"] = agg[group_cols].astype(str).agg(" | ".join, axis=1)
+    top = agg.sort_values("mean_shift", ascending=False).head(top_n)
+    bottom = agg.sort_values("mean_shift", ascending=True).head(top_n)
+    combined = pd.concat([top, bottom]).drop_duplicates(subset="label").sort_values("mean_shift")
+
+    fig, ax = plt.subplots(figsize=(8, max(4, 0.4 * len(combined))))
+    colors = ["#e74c3c" if v < 0 else "#2ecc71" for v in combined["mean_shift"]]
+    ax.barh(combined["label"], combined["mean_shift"], color=colors, edgecolor="black", linewidth=0.5)
+    ax.axvline(0, color="black", linewidth=0.8)
+    ax.set_xlabel("Mean belief shift")
+    ax.set_title(title, fontweight="bold")
+    plt.tight_layout()
+    plt.savefig(f"{FIG_DIR}/{filename}", dpi=150, bbox_inches="tight")
+    plt.close()
+
+
+def plot_faceted_leaderboard(df, group_cols, facet_col, filename, top_n=5):
+    facets = sorted(df[facet_col].dropna().unique())
+    n_facets = len(facets)
+    if n_facets == 0:
+        return
+    fig, axes = plt.subplots(1, n_facets, figsize=(6 * n_facets, 5), sharex=True)
+    if n_facets == 1:
+        axes = [axes]
+
+    for ax, facet_val in zip(axes, facets):
+        sub = df[df[facet_col] == facet_val]
+        agg = sub.groupby(group_cols).agg(mean_shift=("shift", "mean"), n=("shift", "count")).reset_index()
+        agg["label"] = agg[group_cols].astype(str).agg(" | ".join, axis=1)
+        top = agg.sort_values("mean_shift", ascending=False).head(top_n)
+        bottom = agg.sort_values("mean_shift", ascending=True).head(top_n)
+        combined = pd.concat([top, bottom]).drop_duplicates(subset="label").sort_values("mean_shift")
+        colors = ["#e74c3c" if v < 0 else "#2ecc71" for v in combined["mean_shift"]]
+        ax.barh(combined["label"], combined["mean_shift"], color=colors, edgecolor="black", linewidth=0.5)
+        ax.axvline(0, color="black", linewidth=0.8)
+        ax.set_title(f"{facet_col} = {facet_val}", fontweight="bold", fontsize=11)
+        ax.set_xlabel("Mean belief shift")
+
+    plt.tight_layout()
+    plt.savefig(f"{FIG_DIR}/{filename}", dpi=150, bbox_inches="tight")
+    plt.close()
+
+
+def plot_three_way_interaction(df, var1, var2, facet_var, filename):
+    """A true three-way view: one var1 x var2 interaction line plot per
+    level of facet_var, side by side, sharing one y-axis scale. Not
+    marginalized over anything, so unaffected by the collinearity concern
+    that motivated the controlled single/pairwise analyses above."""
+    facets = sorted(df[facet_var].dropna().unique())
+    n = len(facets)
+    if n == 0:
+        print(f"  No levels found for '{facet_var}' - skipping three-way interaction plot")
+        return
+
+    x_by_value = df.groupby(var2)["shift"].mean()
+    x_order = ordered_levels(var2, df[var2].dropna().unique().tolist(), by_value=x_by_value)
+    line_by_value = df.groupby(var1)["shift"].mean()
+    line_levels = ordered_levels(var1, df[var1].dropna().unique().tolist(), by_value=line_by_value)
+
+    all_means = df.groupby([var1, var2])["shift"].mean()
+    y_min, y_max = all_means.min(), all_means.max()
+    y_pad = (y_max - y_min) * 0.1 or 1.0
+
+    fig, axes = plt.subplots(1, n, figsize=(5.5 * n, 5), sharey=True)
+    if n == 1:
+        axes = [axes]
+    cmap = plt.get_cmap("tab10")
+
+    for idx, (ax, f) in enumerate(zip(axes, facets)):
+        sub = df[df[facet_var] == f]
+        for i, level in enumerate(line_levels):
+            means, sems = [], []
+            for x in x_order:
+                vals = sub[(sub[var1] == level) & (sub[var2] == x)]["shift"]
+                means.append(vals.mean())
+                sems.append(vals.sem())
+            ax.errorbar(x_order, means, yerr=sems, marker="o", capsize=3,
+                        label=str(level), color=cmap(i % 10), linewidth=1.3, markersize=4)
+        ax.axhline(0, color="black", linewidth=0.8)
+        ax.set_title(f"{facet_var} = {f}", fontweight="bold", fontsize=11)
+        ax.set_xlabel(var2, fontsize=9)
+        ax.set_ylim(y_min - y_pad, y_max + y_pad)
+        plt.setp(ax.get_xticklabels(), rotation=30, ha="right", fontsize=8)
+        if idx == 0:
+            ax.set_ylabel("Mean belief shift", fontsize=9)
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, title=var1, fontsize=8, loc="upper center",
+               bbox_to_anchor=(0.5, 0.02), ncol=min(len(line_levels), 7))
+    fig.suptitle(f"{var1} x {var2} Interaction, faceted by {facet_var}", fontweight="bold", fontsize=13)
+    plt.tight_layout(rect=[0, 0.06, 1, 0.96])
+    plt.savefig(f"{FIG_DIR}/{filename}", dpi=150, bbox_inches="tight")
+    plt.close()
+
+
+def plot_domain_summary(df):
+    agg = df.groupby("domain").agg(
+        mean_shift=("shift", "mean"),
+        se_shift=("shift", lambda x: x.std() / np.sqrt(len(x))),
+        n=("shift", "count"),
+    ).reset_index().sort_values("mean_shift", ascending=False)
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.barh(agg["domain"], agg["mean_shift"], xerr=1.96 * agg["se_shift"],
+            color="#3498db", edgecolor="black")
+    ax.axvline(0, color="black", linewidth=0.8)
+    ax.set_xlabel("Mean belief shift")
+    ax.set_title("Belief Shift by Domain\n(descriptive only \u2014 not statistically tested; only 6 domains)",
+                 fontweight="bold", fontsize=11)
+    plt.tight_layout()
+    plt.savefig(f"{FIG_DIR}/domain_summary.png", dpi=150, bbox_inches="tight")
+    plt.close()
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+class Tee:
+    """Writes to both the terminal and a log file at once, so every print()
+    in this script is saved to disk."""
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, data):
+        for s in self.streams:
+            s.write(data)
+
+    def flush(self):
+        for s in self.streams:
+            s.flush()
+
+
+def main():
+    if len(sys.argv) >= 2:
+        results_path = sys.argv[1]
+    else:
+        rf = sorted(glob.glob("*results*.csv"))
+        if not rf:
+            print("No results CSV found. Usage: python analyze.py results.csv [preset_claims.csv]")
+            return
+        results_path = rf[0]
+
+    claims_path = sys.argv[2] if len(sys.argv) >= 3 else None
+
+    os.makedirs(FIG_DIR, exist_ok=True)
+    log_path = os.path.join(FIG_DIR, "analysis_log.txt")
+    log_file = open(log_path, "w", encoding="utf-8")
+    original_stdout = sys.stdout
+    sys.stdout = Tee(original_stdout, log_file)
+
+    try:
+        _run_analysis(results_path, claims_path, log_path)
+    finally:
+        sys.stdout = original_stdout
+        log_file.close()
+
+
+def _run_analysis(results_path, claims_path, log_path):
+    print(f"Results: {results_path}")
+    df = load_data(results_path, claims_path)
+
+    print("\n--- Data Summary ---")
+    print(f"Rows: {len(df)}, Distinct claims: {df['claim'].nunique()}")
+    for v in MANIPULATED_VARS + ["claim_type", "domain", "dimension"]:
+        if v in df.columns:
+            print(f"  {v}: {sorted(df[v].dropna().unique().tolist())}")
+
+    # --- ICC diagnostic ---
+    print("\n" + "=" * 60)
+    print("CLAIM CLUSTERING DIAGNOSTIC (ICC)")
+    print("=" * 60)
+    icc_result = compute_icc(df)
+    print(f"  ICC = {icc_result['icc']:.3f}")
+    print(f"  -> {icc_result['icc']*100:.1f}% of the variance in belief shift is attributable "
+          f"to WHICH CLAIM was used")
+    print(f"  ({icc_result['n_claims']} distinct claims, "
+          f"~{icc_result['avg_trials_per_claim']:.1f} trials/claim on average)")
+
+    # --- Censoring check ---
+    print("\n" + "=" * 60)
+    print("CENSORING CHECK (is the 0-100 scale boundary being hit hard enough to bias results?)")
+    print("=" * 60)
+    censoring_by_combo = print_censoring_report(df)
+
+    # --- Leaderboards (full triple, not marginalized) ---
+    print("\n" + "=" * 60)
+    print("LEADERBOARDS: technique x sentiment x goal (triple, top 10)")
+    print("=" * 60)
+    combo_agg = leaderboard(df, MANIPULATED_VARS)
+    print_leaderboard_extremes(combo_agg, MANIPULATED_VARS, "Overall (all claims)", n=10)
+
+    print("\n" + "=" * 60)
+    print("LEADERBOARDS: pairwise (double, top 10)")
+    print("=" * 60)
+    pair_aggs = {}
+    for va, vb in combinations(MANIPULATED_VARS, 2):
+        pair_agg = leaderboard(df, [va, vb])
+        pair_aggs[(va, vb)] = pair_agg
+        print_leaderboard_extremes(pair_agg, [va, vb], f"{va} x {vb}", n=10)
+
+    print("\n" + "=" * 60)
+    print("LEADERBOARDS: by claim_type")
+    print("=" * 60)
+    for ctype in sorted(df["claim_type"].dropna().unique()):
+        sub = df[df["claim_type"] == ctype]
+        sub_agg = leaderboard(sub, MANIPULATED_VARS)
+        print_leaderboard_extremes(sub_agg, MANIPULATED_VARS, f"claim_type = {ctype}", n=3)
+
+    print("\n" + "=" * 60)
+    print(f"LEADERBOARDS: by dimension (min {MIN_TRIALS_FOR_DIMENSION} trials)")
+    print("=" * 60)
+    dim_agg_all = leaderboard(df, MANIPULATED_VARS + ["dimension"], min_trials=None)
+    dim_agg = leaderboard(df, MANIPULATED_VARS + ["dimension"], min_trials=MIN_TRIALS_FOR_DIMENSION)
+    print_leaderboard_extremes(dim_agg, MANIPULATED_VARS + ["dimension"], "By dimension", n=5)
+
+    # --- Controlled single-metric analysis ---
+    print("\n" + "=" * 60)
+    print("SINGLE-METRIC ANALYSIS (controlled for other variables at baseline; t-test vs. baseline level)")
+    print("=" * 60)
+    single_metric_tables = {}
+    for var in MANIPULATED_VARS:
+        single_metric_tables[var] = print_single_metric_ttests(df, var)
+
+    # --- Controlled pairwise analysis ---
+    print("\n" + "=" * 60)
+    print("PAIRWISE ANALYSIS (controlled: third variable held at baseline)")
+    print("=" * 60)
+    for v1, v2 in combinations(MANIPULATED_VARS, 2):
+        print_pairwise_metric_table(df, v1, v2)
+
+    # --- Interaction contrasts (additive vs. observed) ---
+    print("\n" + "=" * 60)
+    print("INTERACTION CONTRASTS (is the combined effect additive, or does it depart from addition?)")
+    print("=" * 60)
+    for v1, v2 in combinations(MANIPULATED_VARS, 2):
+        print_interaction_contrasts(df, v1, v2)
+
+    # --- Reliably manipulable factors ---
+    print("\n" + "=" * 60)
+    print("RELIABLY MANIPULABLE FACTORS (significant AND positive, controlled)")
+    print("=" * 60)
+    reliable_positive = find_reliable_positive_factors(df)
+    if len(reliable_positive) > 0:
+        print(reliable_positive.round(4).to_string(index=False))
+    else:
+        print("  None found - no single controlled level produced a significant positive shift.")
+
+    # --- Domain (descriptive) ---
+    print("\n" + "=" * 60)
+    print("DOMAIN SUMMARY (descriptive only - not statistically tested)")
+    print("=" * 60)
+    domain_agg = df.groupby("domain")["shift"].agg(["mean", "count"]).reset_index()
+    print(domain_agg.to_string(index=False))
+
+    # --- Figures ---
+    print("\nGenerating figures...")
+    plot_belief_distributions(df)
+    print(f"  {FIG_DIR}/belief_distributions.png")
+
+    plot_leaderboard_bars(combo_agg, MANIPULATED_VARS,
+                           "Technique x Sentiment x Goal: Top/Bottom by Mean Shift",
+                           "leaderboard_overall.png")
+    print(f"  {FIG_DIR}/leaderboard_overall.png")
+    plot_faceted_leaderboard(df, MANIPULATED_VARS, "claim_type", "leaderboard_by_claim_type.png")
+    print(f"  {FIG_DIR}/leaderboard_by_claim_type.png")
+
+    for (va, vb), pair_agg in pair_aggs.items():
+        fname = f"leaderboard_pair_{va}_{vb}.png"
+        plot_leaderboard_bars(pair_agg, [va, vb], f"{va} x {vb}: Top/Bottom by Mean Shift", fname)
+        print(f"  {FIG_DIR}/{fname}")
+
+    for var in MANIPULATED_VARS:
+        fname_bar = f"single_{var}.png"
+        plot_single_metric_bar(df, var, fname_bar)
+        print(f"  {FIG_DIR}/{fname_bar}")
+        fname_dist = f"single_{var}_distribution.png"
+        plot_single_metric_distribution(df, var, fname_dist)
+        print(f"  {FIG_DIR}/{fname_dist}")
+
+    for v1, v2 in combinations(MANIPULATED_VARS, 2):
+        fname = f"pairwise_{v1}_{v2}.png"
+        plot_pairwise_interaction(df, v1, v2, fname)
+        print(f"  {FIG_DIR}/{fname}")
+
+    for v1, v2 in combinations(MANIPULATED_VARS, 2):
+        fname = f"interaction_contrast_{v1}_{v2}.png"
+        plot_interaction_contrasts(df, v1, v2, fname)
+        print(f"  {FIG_DIR}/{fname}")
+
+    plot_three_way_interaction(df, "technique", "sentiment", "goal",
+                            "threeway_technique_sentiment_by_goal.png")
+    print(f"  {FIG_DIR}/threeway_technique_sentiment_by_goal.png")
+
+    plot_domain_summary(df)
+    print(f"  {FIG_DIR}/domain_summary.png")
+
+    print(f"\nDone. All figures in {FIG_DIR}/")
+
+    # --- Summary (quick-glance report) ---
+    summary_text = generate_summary(
+        df, icc_result, combo_agg, dim_agg_all, single_metric_tables,
+        reliable_positive, censoring_by_combo
+    )
+    print("\n" + "=" * 60)
+    print(summary_text)
+
+    summary_path = os.path.join(FIG_DIR, "analysis_summary.md")
+    with open(summary_path, "w", encoding="utf-8") as f:
+        f.write(summary_text)
+    print(f"Summary saved to: {summary_path}")
+    print(f"Full run log (everything printed above) saved to: {log_path}")
+
+
+if __name__ == "__main__":
+    main()
