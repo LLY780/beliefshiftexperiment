@@ -13,7 +13,7 @@ To run the experiment, use runExperiment function and do with what you will with
 Output contains (inital belief, end belief) for all types of respones and claims tested
 
 ## Current Experiment Design
-The current experiment design is as follows: assign a neutral stance to the human agent and prompt the human agent for a belief based on an AI response. 
+The current experiment design is as follows: generate a claim, create a response to the claim, rating agent rates the claim, present the claim to the rating agent, rating agent rates the claim again 
 The metrics used are: persuasion techniques ([source](https://www.sciencedirect.com/science/article/pii/S2949882125000817)) and sentiment values
 
 The following models are used: Llama 3.1:8b
@@ -21,4 +21,7 @@ The following models are used: Llama 3.1:8b
 Use ollama pull [model]
 
 ### Running the Experiment
-To be implemented
+WIP
+
+### Disclaimer
+This is a WIP and may have inaccurate details
